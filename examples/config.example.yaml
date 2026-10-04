@@ -1,0 +1,19 @@
+# Single-model profile
+provider: ollama
+models:
+  - llama3.2:3b
+# Or compare:
+# models: [llama3.2:3b, qwen2.5:7b]
+# base_url: http://127.0.0.1:11434
+context: 8192
+tools: true
+tasks: [speed, quality, tools, context]
+mode: sequential
+# concurrency: 2
+runs: 3
+warmup: 1
+report_dir: ./reports
+# workspace: ~/.cache/llm-bench/runs
+# keep_workspace: false
+# timeout: 120
+# seed: 42

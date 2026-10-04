@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }} — {{ manifest.run_id }}</title>
+  {% if ok %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  {% endif %}
+  <style>
+    :root {
+      --bg: #070a0f;
+      --panel: #0d1520;
+      --cyan: #39f0ff;
+      --magenta: #ff2bd6;
+      --amber: #ffc857;
+      --text: #d8f6ff;
+      --muted: #5a7a88;
+      --ok: #3dff9a;
+      --border: #1e3a4c;
+      --font: "IBM Plex Mono", "SF Mono", "Consolas", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background:
+        radial-gradient(ellipse at top, #122033 0%, var(--bg) 55%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(57,240,255,0.03) 3px);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.8rem;
+      color: var(--cyan);
+      letter-spacing: 0.08em;
+      text-shadow: 0 0 12px rgba(57,240,255,0.45);
+    }
+    .sub { color: var(--amber); margin-bottom: 1rem; font-size: 0.9rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem 1.1rem;
+      box-shadow: 0 0 0 1px rgba(255,43,214,0.08), inset 0 0 40px rgba(57,240,255,0.03);
+    }
+    .card h3 {
+      margin: 0 0 0.5rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--magenta);
+    }
+    .big {
+      font-size: 1.8rem;
+      color: var(--cyan);
+    }
+    .value {
+      font-size: 1.55rem;
+      color: var(--cyan);
+      line-height: 1.2;
+    }
+    .value .unit {
+      font-size: 0.85rem;
+      color: var(--amber);
+      margin-left: 0.25rem;
+    }
+    .muted { color: var(--muted); font-size: 0.8rem; }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem 1.25rem;
+    }
+    .spec-grid dt {
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin: 0;
+    }
+    .spec-grid dd {
+      margin: 0.15rem 0 0;
+      color: var(--amber);
+      font-size: 0.95rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 0.55rem 0.4rem;
+      text-align: left;
+    }
+    th { color: var(--amber); font-weight: 600; }
+    tr:hover td { background: rgba(57,240,255,0.04); }
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    canvas { max-height: 280px; }
+    footer {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      border-radius: 2px;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+    }
+    .badge.fail { border-color: #ff4d6d; color: #ff4d6d; }
+    .errors {
+      background: #1a0a10;
+      border: 1px solid #ff4d6d;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      border-radius: 4px;
+    }
+    .errors h3 { color: #ff4d6d; margin: 0 0 0.75rem; }
+    .errors li { margin: 0.35rem 0; color: #ffc0cb; }
+  </style>
+</head>
+<body>
+  <h1>LLM-BENCH // REPORT</h1>
+  <div class="sub">
+    <span class="badge">{{ mode | upper }}</span>
+    {% if not ok %}<span class="badge fail">FAILED</span>{% endif %}
+    &nbsp; run {{ manifest.run_id }} &nbsp;·&nbsp;
+    provider {{ manifest.provider.value }} &nbsp;·&nbsp;
+    {{ manifest.model_count }} model(s)
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem">
+    <h3>Test specifications</h3>
+    <dl class="spec-grid">
+      <div>
+        <dt>Models</dt>
+        <dd>{{ manifest.models | join(', ') }}</dd>
+      </div>
+      <div>
+        <dt>Provider</dt>
+        <dd>{{ manifest.provider.value }}</dd>
+      </div>
+      <div>
+        <dt>Tasks</dt>
+        <dd>{{ manifest.tasks | join(', ') }}</dd>
+      </div>
+      <div>
+        <dt>Context</dt>
+        <dd>{{ manifest.context }} tokens</dd>
+      </div>
+      <div>
+        <dt>Tools</dt>
+        <dd>{{ 'on' if manifest.tools else 'off' }}</dd>
+      </div>
+      <div>
+        <dt>Mode</dt>
+        <dd>{{ manifest.mode }}</dd>
+      </div>
+      <div>
+        <dt>Runs / warmup</dt>
+        <dd>{{ manifest.runs }} / {{ manifest.warmup }}</dd>
+      </div>
+      <div>
+        <dt>Host</dt>
+        <dd>{{ manifest.host.os }}{% if manifest.host.gpu %} · {{ manifest.host.gpu }}{% endif %}</dd>
+      </div>
+    </dl>
+  </div>
+
+  {% if errors %}
+  <div class="errors">
+    <h3>Errors — no usable metrics{% if not ok %} (empty run){% endif %}</h3>
+    <ul>
+      {% for e in errors %}
+      <li><strong>{{ e.model }}</strong> / {{ e.task }}: {{ e.error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if ok %}
+  <div class="grid">
+    {% for sc in scores %}
+    <div class="card">
+      <h3>{% if mode == 'compare' and loop.first %}★ WINNER{% else %}MODEL{% endif %}</h3>
+      <div class="big">{{ sc.model }}</div>
+      <div class="muted">overall {{ '%.3f'|format(sc.overall) }}</div>
+      <div class="muted">
+        speed {{ '%.2f'|format(sc.breakdown.get('speed', 0)) }} ·
+        quality {{ '%.2f'|format(sc.breakdown.get('quality', 0)) }} ·
+        tools {{ '%.2f'|format(sc.breakdown.get('tools', 0)) }} ·
+        context {{ '%.2f'|format(sc.breakdown.get('context', 0)) }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if mode == 'profile' %}
+  <div class="grid">
+    <div class="card">
+      <h3>Decode speed</h3>
+      <div class="value">{{ '%.2f'|format(profile_metrics.decode_tps) if profile_metrics.decode_tps is not none else '—' }}{% if profile_metrics.decode_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div>
+      <div class="muted">mean generation throughput</div>
+    </div>
+    <div class="card">
+      <h3>Prefill speed</h3>
+      <div class="value">{{ '%.1f'|format(profile_metrics.prefill_tps) if profile_metrics.prefill_tps is not none else '—' }}{% if profile_metrics.prefill_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div>
+      <div class="muted">prompt eval throughput</div>
+    </div>
+    <div class="card">
+      <h3>TTFT</h3>
+      <div class="value">{{ '%.1f'|format(profile_metrics.ttft_ms) if profile_metrics.ttft_ms is not none else '—' }}{% if profile_metrics.ttft_ms is not none %}<span class="unit">ms</span>{% endif %}</div>
+      <div class="muted">time to first token</div>
+    </div>
+    <div class="card">
+      <h3>Overall score</h3>
+      <div class="value">{{ '%.3f'|format(profile_metrics.overall) }}</div>
+      <div class="muted">
+        quality {{ '%.2f'|format(profile_metrics.quality) }} ·
+        tools {{ '%.2f'|format(profile_metrics.tools) }} ·
+        context {{ '%.2f'|format(profile_metrics.context) }}
+      </div>
+    </div>
+    <div class="card">
+      <h3>Peak model RAM</h3>
+      <div class="value">{{ '%.0f'|format(memory.peak_model_ram_mb) if memory.peak_model_ram_mb is not none else '—' }}{% if memory.peak_model_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div>
+      <div class="muted">weights in memory</div>
+    </div>
+    <div class="card">
+      <h3>Peak KV-cache</h3>
+      <div class="value">{{ '%.0f'|format(memory.peak_kv_ram_mb) if memory.peak_kv_ram_mb is not none else '—' }}{% if memory.peak_kv_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div>
+      <div class="muted">estimated context cache</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="charts">
+    <div class="card">
+      <h3>Decode tok/s</h3>
+      <canvas id="chartTok"></canvas>
+    </div>
+    <div class="card">
+      <h3>Prefill tok/s</h3>
+      <canvas id="chartPrefill"></canvas>
+    </div>
+    <div class="card">
+      <h3>TTFT (ms)</h3>
+      <canvas id="chartTtft"></canvas>
+    </div>
+    <div class="card">
+      <h3>Quality Breakdown</h3>
+      <canvas id="chartQual"></canvas>
+    </div>
+    <div class="card">
+      <h3>Overall Score</h3>
+      <canvas id="chartOverall"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:1rem">
+    <h3>Memory over time (MB)</h3>
+    <div class="muted" style="margin-bottom:0.75rem">
+      peaks — system {{ '%.0f'|format(memory.peak_system_used_mb) }} MB ·
+      process {{ '%.0f'|format(memory.peak_process_rss_mb) }} MB ·
+      model {{ '%.0f'|format(memory.peak_model_ram_mb) if memory.peak_model_ram_mb is not none else '—' }}{% if memory.peak_model_ram_mb is not none %} MB{% endif %} ·
+      kv {{ '%.0f'|format(memory.peak_kv_ram_mb) if memory.peak_kv_ram_mb is not none else '—' }}{% if memory.peak_kv_ram_mb is not none %} MB{% endif %} ·
+      context {{ '%.0f'|format(memory.peak_context_ram_mb) if memory.peak_context_ram_mb is not none else '—' }}{% if memory.peak_context_ram_mb is not none %} MB{% endif %}
+    </div>
+    <canvas id="chartMem"></canvas>
+  </div>
+  {% else %}
+  <div class="card">
+    <h3>Empty report</h3>
+    <p class="muted">Start the provider (e.g. <code>ollama serve</code>), confirm the model exists, then re-run.</p>
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:1.5rem">
+    <h3>Model × Metric table</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Task</th>
+          <th>Decode (tok/s)</th>
+          <th>Prefill (tok/s)</th>
+          <th>TTFT (ms)</th>
+          <th>Score (0–1)</th>
+          <th>Tool success (0–1)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in heatmap %}
+        <tr>
+          <td>{{ row.model }}</td>
+          <td>{{ row.task }}</td>
+          <td>{{ '%.2f tok/s'|format(row.tokens_per_sec) if row.tokens_per_sec is not none else '—' }}</td>
+          <td>{{ '%.1f tok/s'|format(row.prefill_tokens_per_sec) if row.prefill_tokens_per_sec is not none else '—' }}</td>
+          <td>{{ '%.1f ms'|format(row.ttft_ms) if row.ttft_ms is not none else '—' }}</td>
+          <td>{{ '%.2f'|format(row.score) if row.score is not none else '—' }}</td>
+          <td>{{ '%.2f'|format(row.success_rate) if row.success_rate is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    Host: {{ manifest.host.os }} · {{ manifest.host.cpu }} · {{ manifest.host.ram_gb }} GB RAM
+    {% if manifest.host.gpu %} · GPU {{ manifest.host.gpu }}{% endif %}<br/>
+    python {{ manifest.host.python }} · run {{ manifest.run_id }}
+  </footer>
+
+  {% if ok %}
+  <script>
+    const memT = {{ mem_t_json | safe }};
+    const memSystem = {{ mem_system_json | safe }};
+    const memProcess = {{ mem_process_json | safe }};
+    const memModel = {{ mem_model_json | safe }};
+    const memKv = {{ mem_kv_json | safe }};
+    const memContext = {{ mem_context_json | safe }};
+
+    const grid = { color: 'rgba(90,122,136,0.25)' };
+    const ticks = { color: '#5a7a88', font: { family: 'IBM Plex Mono' } };
+    Chart.defaults.color = '#d8f6ff';
+    Chart.defaults.borderColor = 'rgba(30,58,76,0.8)';
+
+    {% if mode != 'profile' %}
+    const labels = {{ labels_json | safe }};
+    const tokS = {{ tok_s_json | safe }};
+    const prefill = {{ prefill_json | safe }};
+    const ttft = {{ ttft_json | safe }};
+    const overall = {{ overall_json | safe }};
+    const quality = {{ quality_json | safe }};
+    const tools = {{ tools_json | safe }};
+    const context = {{ context_json | safe }};
+
+    new Chart(document.getElementById('chartTok'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'decode tok/s', data: tokS, backgroundColor: '#39f0ffaa' }] },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
+    });
+    new Chart(document.getElementById('chartPrefill'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'prefill tok/s', data: prefill, backgroundColor: '#3dff9aaa' }] },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
+    });
+    new Chart(document.getElementById('chartTtft'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'TTFT ms', data: ttft, backgroundColor: '#ff2bd6aa' }] },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
+    });
+    new Chart(document.getElementById('chartQual'), {
+      type: 'radar',
+      data: {
+        labels: ['Quality', 'Tools', 'Context'],
+        datasets: labels.map((name, i) => ({
+          label: name,
+          data: [quality[i], tools[i], context[i]],
+          borderColor: i === 0 ? '#39f0ff' : '#ffc857',
+          backgroundColor: i === 0 ? 'rgba(57,240,255,0.15)' : 'rgba(255,200,87,0.12)'
+        }))
+      },
+      options: { scales: { r: { min: 0, max: 1, ticks: { display: false }, grid: { color: 'rgba(90,122,136,0.3)' }, angleLines: { color: 'rgba(90,122,136,0.3)' }, pointLabels: { color: '#ffc857' } } } }
+    });
+    new Chart(document.getElementById('chartOverall'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'overall', data: overall, backgroundColor: '#ffc857aa' }] },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { min: 0, max: 1, ticks, grid } } }
+    });
+    {% endif %}
+
+    new Chart(document.getElementById('chartMem'), {
+      type: 'line',
+      data: {
+        labels: memT,
+        datasets: [
+          { label: 'System RAM', data: memSystem, borderColor: '#39f0ff', tension: 0.2, pointRadius: 0 },
+          { label: 'Process RSS', data: memProcess, borderColor: '#ffc857', tension: 0.2, pointRadius: 0 },
+          { label: 'Model RAM', data: memModel, borderColor: '#ff2bd6', tension: 0.2, pointRadius: 0 },
+          { label: 'KV-cache', data: memKv, borderColor: '#3dff9a', tension: 0.2, pointRadius: 0 },
+          { label: 'Context', data: memContext, borderColor: '#d8f6ff', borderDash: [4, 4], tension: 0.2, pointRadius: 0 }
+        ]
+      },
+      options: {
+        plugins: { legend: { labels: { boxWidth: 12 } } },
+        scales: {
+          x: { title: { display: true, text: 'seconds', color: '#5a7a88' }, ticks, grid },
+          y: { title: { display: true, text: 'MB', color: '#5a7a88' }, ticks, grid }
+        }
+      }
+    });
+  </script>
+  {% endif %}
+</body>
+</html>
