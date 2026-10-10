@@ -20,6 +20,8 @@ def _pad_prompt(base: str, target_chars: int) -> str:
 class PromptLatencyTask(BenchTask):
     name = "prompt_latency"
     aliases = ("latency",)
+    kind = "performance"
+    description = "prefill speed and TTFT for 0.5k / 2k / 8k-character prompts"
 
     async def run(
         self,

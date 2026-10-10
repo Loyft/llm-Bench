@@ -86,3 +86,67 @@ class MockProvider(BaseProvider):
 
     async def aclose(self) -> None:
         return None
+
+
+class OracleProvider(MockProvider):
+    """Answers every capability task with its gold response (grader/harness self-test)."""
+
+    TOOL_ARGS = {
+        "weather": ("get_weather", {"city": "Paris", "unit": "celsius"}),
+        "calc": ("calculator", {"expression": "1234 * 5678"}),
+        "timer": ("set_timer", {"minutes": 15}),
+        "email": ("send_email", {"to": "bob@example.com", "subject": "Lunch",
+                                 "body": "Are we still on for noon?"}),
+        "search": ("search_web", {"query": "Mars Sample Return news"}),
+    }
+
+    def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(**kwargs)
+        from llm_bench.benchmarks.registry import task_catalog
+        from llm_bench.benchmarks.tasks.items import ItemTask
+
+        self.gold: dict[tuple, str] = {}
+        for task in task_catalog():
+            if isinstance(task, ItemTask):
+                for item in task.items:
+                    key = tuple((m.role, m.content) for m in task.build_messages(item))
+                    self.gold[key] = task.gold_response(item)
+
+    async def chat(self, req: ChatRequest) -> ChatResult:
+        import json
+        import re
+
+        from llm_bench.benchmarks.tasks.tool_calling import SCENARIOS
+
+        key = tuple((m.role, m.content) for m in req.messages)
+        user = req.messages[-1].content
+        if key in self.gold:
+            return self._reply(self.gold[key])
+        if req.tools:
+            for sc in SCENARIOS:
+                if sc["prompt"] == user:
+                    if sc["tool"] is None:
+                        return self._reply("Hello! I'm doing well.")
+                    name, args = self.TOOL_ARGS[sc["id"]]
+                    return timed_chat_fields(
+                        text="",
+                        start=time.perf_counter(),
+                        first_token_at=time.perf_counter(),
+                        completion_tokens=10,
+                        prompt_tokens=30,
+                        tool_calls=[{"function": {"name": name, "arguments": json.dumps(args)}}],
+                    )
+        m = re.search(r"vault access code is ([A-Z]+-\d+)", user)
+        if m:
+            return self._reply(m.group(1))
+        return await super().chat(req)
+
+    def _reply(self, text: str) -> ChatResult:
+        start = time.perf_counter()
+        return timed_chat_fields(
+            text=text,
+            start=start,
+            first_token_at=time.perf_counter(),
+            completion_tokens=max(1, len(text.split())),
+            prompt_tokens=20,
+        )

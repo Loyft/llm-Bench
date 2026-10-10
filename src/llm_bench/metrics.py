@@ -4,18 +4,44 @@ from __future__ import annotations
 
 import statistics
 from collections import defaultdict
-from typing import Any
 
+from llm_bench.providers.base import percentile
 from llm_bench.schema import ModelScore, SampleResult, TaskSummary
 
-# Weights for overall score (configurable conceptually; fixed defaults for v0.1)
-DEFAULT_WEIGHTS = {
-    "speed": 0.40,
-    "quality": 0.35,
-    "tools": 0.15,
-    "context": 0.10,
-    "latency": 0.0,  # folded into speed presentation; not double-counted
+# Capability tasks: task name -> (breakdown key, metric to read, weight).
+# Weights sum to 1.0; categories a run did not execute are dropped and the rest renormalised.
+CAPABILITY_WEIGHTS: dict[str, tuple[str, str, float]] = {
+    "reasoning": ("reasoning", "score", 0.20),
+    "coding": ("coding", "score", 0.20),
+    "knowledge": ("knowledge", "score", 0.15),
+    "instruction_following": ("instructions", "score", 0.12),
+    "tool_calling": ("tools", "success_rate", 0.10),
+    "long_context": ("context", "score", 0.08),
+    "hallucination": ("hallucination", "score", 0.07),
+    "multi_turn": ("multi_turn", "score", 0.04),
+    "instruction_quality": ("quality", "score", 0.03),
+    "consistency": ("consistency", "score", 0.01),
 }
+# Within performance: decode speed + TTFT vs prefill throughput.
+PERFORMANCE_WEIGHTS = {"speed": 0.7, "prefill": 0.3}
+# Overall = blend of "how fast" and "how good".
+OVERALL_WEIGHTS = {"performance": 0.3, "capability": 0.7}
+
+# Metrics that get p50/p95 in summaries (latency/throughput are skewed; means hide tails).
+PERCENTILE_KEYS = {
+    "ttft_ms",
+    "total_ms",
+    "itl_ms_mean",
+    "tokens_per_sec",
+    "decode_tokens_per_sec",
+    "prefill_tokens_per_sec",
+    "completion_tokens",
+}
+MINMAX_KEYS = {"tokens_per_sec", "ttft_ms"}
+
+
+def _is_accuracy_key(key: str) -> bool:
+    return key in {"score", "passed", "success", "success_rate"} or key.startswith("score_")
 
 
 def safe_mean(values: list[float]) -> float | None:
@@ -49,21 +75,31 @@ def aggregate_samples(samples: list[SampleResult]) -> list[TaskSummary]:
         for item in items:
             if item.error:
                 errors += 1
-                continue
             for k, v in item.metrics.items():
+                # A failed request is a wrong answer, not a missing one: keep its accuracy
+                # fields (zeros) so errors cannot inflate a model's score.
+                if item.error and not _is_accuracy_key(k):
+                    continue
                 if isinstance(v, bool):
                     numeric[k].append(1.0 if v else 0.0)
-                elif isinstance(v, (int, float)) and v is not None:
+                elif isinstance(v, (int, float)):
                     numeric[k].append(float(v))
 
         metrics: dict[str, float | int | str | bool | None] = {}
         for k, vals in numeric.items():
             mean = safe_mean(vals)
-            if mean is not None:
-                metrics[k] = round(mean, 4)
-                std = safe_stdev(vals)
-                if std is not None:
-                    metrics[f"{k}_std"] = round(std, 4)
+            if mean is None:
+                continue
+            metrics[k] = round(mean, 4)
+            std = safe_stdev(vals)
+            if std is not None:
+                metrics[f"{k}_std"] = round(std, 4)
+            if k in PERCENTILE_KEYS and len(vals) >= 2:
+                metrics[f"{k}_p50"] = round(percentile(vals, 50) or 0.0, 4)
+                metrics[f"{k}_p95"] = round(percentile(vals, 95) or 0.0, 4)
+            if k in MINMAX_KEYS and len(vals) >= 2:
+                metrics[f"{k}_min"] = round(min(vals), 4)
+                metrics[f"{k}_max"] = round(max(vals), 4)
 
         summaries.append(
             TaskSummary(
@@ -96,59 +132,57 @@ def _norm_lower_better(value: float | None, peers: list[float]) -> float:
     return (hi - value) / (hi - lo)
 
 
+def _num(block: TaskSummary | None, key: str) -> float | None:
+    if block is None:
+        return None
+    v = block.metrics.get(key)
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _unit(v: float | None) -> float:
+    if v is None:
+        return 0.0
+    return max(0.0, min(1.0, v if v <= 1.0 else v / 100.0))
+
+
+def _weighted(parts: dict[str, float], weights: dict[str, float]) -> float | None:
+    used = {k: w for k, w in weights.items() if k in parts and w > 0}
+    total = sum(used.values())
+    if total <= 0:
+        return None
+    return sum(parts[k] * w for k, w in used.items()) / total
+
+
 def score_models(summaries: list[TaskSummary]) -> list[ModelScore]:
     by_model: dict[tuple[str, str], dict[str, TaskSummary]] = defaultdict(dict)
     for s in summaries:
         by_model[(s.model, s.provider)][s.task] = s
 
-    # Collect peer metrics for relative scoring
+    # Peer pools for relative speed scoring when several models are compared
     tok_s: list[float] = []
     ttft: list[float] = []
-    quality: list[float] = []
-    tools: list[float] = []
-    context: list[float] = []
-
+    prefill: list[float] = []
     for tasks in by_model.values():
-        speed = tasks.get("speed") or tasks.get("generation_speed")
-        if speed:
-            v = speed.metrics.get("tokens_per_sec")
-            if isinstance(v, (int, float)):
-                tok_s.append(float(v))
-            v = speed.metrics.get("ttft_ms")
-            if isinstance(v, (int, float)):
-                ttft.append(float(v))
-        lat = tasks.get("latency") or tasks.get("prompt_latency")
-        if lat:
-            v = lat.metrics.get("ttft_ms")
-            if isinstance(v, (int, float)):
-                ttft.append(float(v))
-        q = tasks.get("quality") or tasks.get("instruction_quality")
-        if q:
-            v = q.metrics.get("score")
-            if isinstance(v, (int, float)):
-                quality.append(float(v))
-        t = tasks.get("tools") or tasks.get("tool_calling")
-        if t:
-            v = t.metrics.get("success_rate")
-            if isinstance(v, (int, float)):
-                tools.append(float(v))
-        c = tasks.get("context") or tasks.get("long_context")
-        if c:
-            v = c.metrics.get("score")
-            if isinstance(v, (int, float)):
-                context.append(float(v))
+        speed = tasks.get("generation_speed")
+        lat = tasks.get("prompt_latency")
+        if (v := _num(speed, "tokens_per_sec")) is not None:
+            tok_s.append(v)
+        for block in (speed, lat):
+            if (v := _num(block, "ttft_ms")) is not None:
+                ttft.append(v)
+        if (v := _num(lat, "prefill_tokens_per_sec")) is not None:
+            prefill.append(v)
+        elif (v := _num(speed, "prefill_tokens_per_sec")) is not None:
+            prefill.append(v)
 
     scores: list[ModelScore] = []
     for (model, provider), tasks in by_model.items():
         breakdown: dict[str, float] = {}
 
-        speed = tasks.get("speed") or tasks.get("generation_speed")
+        speed = tasks.get("generation_speed")
         if speed:
-            tps = speed.metrics.get("tokens_per_sec")
-            tps_f = float(tps) if isinstance(tps, (int, float)) else None
-            tt = speed.metrics.get("ttft_ms")
-            tt_f = float(tt) if isinstance(tt, (int, float)) else None
-            # Absolute bands when single model; relative when peers exist
+            tps_f = _num(speed, "tokens_per_sec")
+            tt_f = _num(speed, "ttft_ms")
             if len(tok_s) <= 1:
                 # Informal reference: 0–80 tok/s maps to 0–1
                 speed_score = min(1.0, (tps_f or 0.0) / 80.0) * 0.7 + (
@@ -160,38 +194,56 @@ def score_models(summaries: list[TaskSummary]) -> list[ModelScore]:
                 )
             breakdown["speed"] = round(speed_score, 4)
 
-        q = tasks.get("quality") or tasks.get("instruction_quality")
-        if q:
-            v = q.metrics.get("score")
-            qf = float(v) if isinstance(v, (int, float)) else 0.0
-            breakdown["quality"] = round(qf if qf <= 1.0 else qf / 100.0, 4)
+        lat = tasks.get("prompt_latency")
+        pf = _num(lat, "prefill_tokens_per_sec")
+        if pf is None:
+            pf = _num(speed, "prefill_tokens_per_sec")
+        if pf is not None:
+            pf_score = (
+                min(1.0, pf / 1000.0) if len(prefill) <= 1 else _norm_higher_better(pf, prefill)
+            )
+            breakdown["prefill"] = round(pf_score, 4)
 
-        t = tasks.get("tools") or tasks.get("tool_calling")
-        if t:
-            v = t.metrics.get("success_rate")
-            tf = float(v) if isinstance(v, (int, float)) else 0.0
-            breakdown["tools"] = round(tf if tf <= 1.0 else tf / 100.0, 4)
+        capability_parts: dict[str, float] = {}
+        capability_weights: dict[str, float] = {}
+        for task_name, (key, metric, weight) in CAPABILITY_WEIGHTS.items():
+            block = tasks.get(task_name)
+            if block is None:
+                continue
+            value = _unit(_num(block, metric))
+            breakdown[key] = round(value, 4)
+            capability_parts[key] = value
+            capability_weights[key] = weight
 
-        c = tasks.get("context") or tasks.get("long_context")
-        if c:
-            v = c.metrics.get("score")
-            cf = float(v) if isinstance(v, (int, float)) else 0.0
-            breakdown["context"] = round(cf if cf <= 1.0 else cf / 100.0, 4)
+        performance = _weighted(
+            {k: breakdown[k] for k in PERFORMANCE_WEIGHTS if k in breakdown},
+            PERFORMANCE_WEIGHTS,
+        )
+        capability = _weighted(capability_parts, capability_weights)
+        overall = (
+            _weighted(
+                {
+                    k: v
+                    for k, v in (("performance", performance), ("capability", capability))
+                    if v is not None
+                },
+                OVERALL_WEIGHTS,
+            )
+            or 0.0
+        )
 
-        total_w = 0.0
-        overall = 0.0
-        for key, weight in DEFAULT_WEIGHTS.items():
-            if key in breakdown and weight > 0:
-                overall += breakdown[key] * weight
-                total_w += weight
-        if total_w > 0:
-            overall /= total_w
+        total_samples = sum(t.samples for t in tasks.values())
+        total_errors = sum(t.errors for t in tasks.values())
+        reliability = 1.0 - (total_errors / total_samples) if total_samples else 0.0
 
         scores.append(
             ModelScore(
                 model=model,
                 provider=provider,
                 overall=round(overall, 4),
+                performance=round(performance, 4) if performance is not None else None,
+                capability=round(capability, 4) if capability is not None else None,
+                reliability=round(reliability, 4),
                 breakdown=breakdown,
                 tasks=tasks,
             )

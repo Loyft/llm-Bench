@@ -136,6 +136,17 @@
     }
     .errors h3 { color: #ff4d6d; margin: 0 0 0.75rem; }
     .errors li { margin: 0.35rem 0; color: #ffc0cb; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .cell { position: relative; text-align: right; font-variant-numeric: tabular-nums; }
+    .cell.g { color: var(--ok); } .cell.y { color: var(--amber); } .cell.r { color: #ff4d6d; }
+    .bar { height: 3px; background: var(--border); margin-top: 3px; border-radius: 2px; }
+    .bar > i { display: block; height: 100%; background: currentColor; border-radius: 2px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .chip { border: 1px solid var(--border); padding: 0.1rem 0.45rem; border-radius: 2px; font-size: 0.75rem; }
+    .chip b { color: var(--cyan); font-weight: 600; }
+    .scroll { overflow-x: auto; }
+    details summary { cursor: pointer; color: var(--magenta); letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.75rem; }
+    td.wrap { white-space: normal; max-width: 36ch; word-break: break-word; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -203,12 +214,11 @@
     <div class="card">
       <h3>{% if mode == 'compare' and loop.first %}★ WINNER{% else %}MODEL{% endif %}</h3>
       <div class="big">{{ sc.model }}</div>
-      <div class="muted">overall {{ '%.3f'|format(sc.overall) }}</div>
       <div class="muted">
-        speed {{ '%.2f'|format(sc.breakdown.get('speed', 0)) }} ·
-        quality {{ '%.2f'|format(sc.breakdown.get('quality', 0)) }} ·
-        tools {{ '%.2f'|format(sc.breakdown.get('tools', 0)) }} ·
-        context {{ '%.2f'|format(sc.breakdown.get('context', 0)) }}
+        overall {{ '%.3f'|format(sc.overall) }}
+        {% if sc.performance is not none %}· performance {{ '%.2f'|format(sc.performance) }}{% endif %}
+        {% if sc.capability is not none %}· capability {{ '%.2f'|format(sc.capability) }}{% endif %}
+        · reliability {{ '%.0f'|format(sc.reliability * 100) }}%
       </div>
     </div>
     {% endfor %}
@@ -235,9 +245,9 @@
       <h3>Overall score</h3>
       <div class="value">{{ '%.3f'|format(profile_metrics.overall) }}</div>
       <div class="muted">
-        quality {{ '%.2f'|format(profile_metrics.quality) }} ·
-        tools {{ '%.2f'|format(profile_metrics.tools) }} ·
-        context {{ '%.2f'|format(profile_metrics.context) }}
+        {% if profile_metrics.performance is not none %}performance {{ '%.2f'|format(profile_metrics.performance) }}{% endif %}
+        {% if profile_metrics.capability is not none %}· capability {{ '%.2f'|format(profile_metrics.capability) }}{% endif %}
+        · reliability {{ '%.0f'|format(profile_metrics.reliability * 100) }}%
       </div>
     </div>
     <div class="card">
@@ -266,7 +276,7 @@
       <canvas id="chartTtft"></canvas>
     </div>
     <div class="card">
-      <h3>Quality Breakdown</h3>
+      <h3>Capability radar</h3>
       <canvas id="chartQual"></canvas>
     </div>
     <div class="card">
@@ -294,35 +304,159 @@
   </div>
   {% endif %}
 
+  {% if ok %}
+  {% macro heat(v) -%}
+    {%- if v is none -%}<td class="cell">—</td>
+    {%- else -%}<td class="cell {{ 'g' if v >= 0.8 else ('y' if v >= 0.5 else 'r') }}">{{ '%.2f'|format(v) }}<div class="bar"><i style="width: {{ (v * 100)|round|int }}%"></i></div></td>
+    {%- endif -%}
+  {%- endmacro %}
+
+  {% if matrix.cols %}
   <div class="card" style="margin-top:1.5rem">
-    <h3>Model × Metric table</h3>
-    <table>
+    <h3>Capability breakdown (0–1)</h3>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Model</th>
+        {% for label in matrix.labels %}<th class="num">{{ label }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for row in matrix.rows %}
+        <tr>
+          <td>{{ row.model }}</td>
+          {% for k in matrix.cols %}{{ heat(row['values'][k]) }}{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
+  {% if categories %}
+  <div class="card" style="margin-top:1.5rem">
+    <h3>Sub-scores by category</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>Model</th><th>Task</th><th>Categories</th></tr></thead>
+      <tbody>
+        {% for row in categories %}
+        <tr>
+          <td>{{ row.model }}</td>
+          <td>{{ row.task }}</td>
+          <td><div class="chips">
+            {% for c in row.categories %}<span class="chip">{{ c.name }} <b>{{ '%.2f'|format(c.value) }}</b></span>{% endfor %}
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
+  {% if speed %}
+  <div class="card" style="margin-top:1.5rem">
+    <h3>Speed detail</h3>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>Model</th>
+        <th class="num">Decode tok/s<br/><span class="muted">mean · p50 · p95</span></th>
+        <th class="num">TTFT ms<br/><span class="muted">mean · p50 · p95</span></th>
+        <th class="num">Inter-token ms<br/><span class="muted">mean · p95 · max</span></th>
+        <th class="num">Prefill tok/s</th>
+        <th class="num">Concurrent agg tok/s<br/><span class="muted">×1 · ×2 · ×4 (scaling)</span></th>
+      </tr></thead>
+      <tbody>
+        {% macro f1(v) %}{{ '%.1f'|format(v) if v is not none else '—' }}{% endmacro %}
+        {% for r in speed %}
+        <tr>
+          <td>{{ r.model }}</td>
+          <td class="num">{{ f1(r.decode_mean) }} · {{ f1(r.decode_p50) }} · {{ f1(r.decode_p95) }}</td>
+          <td class="num">{{ f1(r.ttft_mean) }} · {{ f1(r.ttft_p50) }} · {{ f1(r.ttft_p95) }}</td>
+          <td class="num">{{ f1(r.itl_mean) }} · {{ f1(r.itl_p95) }} · {{ f1(r.itl_max) }}</td>
+          <td class="num">{{ f1(r.prefill) }}</td>
+          <td class="num">{% if r.agg_c1 or r.agg_c2 or r.agg_c4 %}{{ f1(r.agg_c1) }} · {{ f1(r.agg_c2) }} · {{ f1(r.agg_c4) }}{% if r.scaling_c4 %} ({{ '%.1f'|format(r.scaling_c4) }}x){% endif %}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:1.5rem">
+    <h3>Run health</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>Model</th><th class="num">Reliability</th><th class="num">Avg tokens / response</th><th class="num">Truncated</th><th class="num">Empty</th></tr></thead>
+      <tbody>
+        {% for r in health %}
+        <tr>
+          <td>{{ r.model }}</td>
+          <td class="num">{{ '%.0f%%'|format(r.reliability * 100) }}</td>
+          <td class="num">{{ '%.0f'|format(r.avg_tokens) if r.avg_tokens is not none else '—' }}</td>
+          <td class="num">{{ '%.0f%%'|format(r.truncated * 100) if r.truncated is not none else '—' }}</td>
+          <td class="num">{{ '%.0f%%'|format(r.empty * 100) if r.empty is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    <div class="muted" style="margin-top:0.5rem">Truncated = response hit the token budget (answer may be cut off; common with long reasoning traces).</div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem">
+    <h3>Per-task results</h3>
+    <div class="scroll"><table>
       <thead>
         <tr>
           <th>Model</th>
           <th>Task</th>
-          <th>Decode (tok/s)</th>
-          <th>Prefill (tok/s)</th>
-          <th>TTFT (ms)</th>
-          <th>Score (0–1)</th>
-          <th>Tool success (0–1)</th>
+          <th class="num">Score (0–1)</th>
+          <th class="num">OK / total</th>
+          <th class="num">Decode (tok/s)</th>
+          <th class="num">Prefill (tok/s)</th>
+          <th class="num">TTFT (ms)</th>
+          <th class="num">Avg tokens</th>
+          <th class="num">Truncated</th>
+          <th>Notes</th>
         </tr>
       </thead>
       <tbody>
-        {% for row in heatmap %}
+        {% for r in tasks %}
         <tr>
-          <td>{{ row.model }}</td>
-          <td>{{ row.task }}</td>
-          <td>{{ '%.2f tok/s'|format(row.tokens_per_sec) if row.tokens_per_sec is not none else '—' }}</td>
-          <td>{{ '%.1f tok/s'|format(row.prefill_tokens_per_sec) if row.prefill_tokens_per_sec is not none else '—' }}</td>
-          <td>{{ '%.1f ms'|format(row.ttft_ms) if row.ttft_ms is not none else '—' }}</td>
-          <td>{{ '%.2f'|format(row.score) if row.score is not none else '—' }}</td>
-          <td>{{ '%.2f'|format(row.success_rate) if row.success_rate is not none else '—' }}</td>
+          <td>{{ r.model }}</td>
+          <td>{{ r.task }}</td>
+          {{ heat(r.score) }}
+          <td class="num">{{ r.ok }}/{{ r.samples }}</td>
+          <td class="num">{{ '%.2f'|format(r.decode_tps) if r.decode_tps is not none else '—' }}</td>
+          <td class="num">{{ '%.1f'|format(r.prefill_tps) if r.prefill_tps is not none else '—' }}</td>
+          <td class="num">{{ '%.1f'|format(r.ttft_ms) if r.ttft_ms is not none else '—' }}</td>
+          <td class="num">{{ '%.0f'|format(r.avg_tokens) if r.avg_tokens is not none else '—' }}</td>
+          <td class="num">{{ '%.0f%%'|format(r.truncated * 100) if r.truncated is not none else '—' }}</td>
+          <td class="wrap">{% for k, v in r.extras %}{{ k }} {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
         </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </div>
+
+  {% if failures %}
+  <div class="card" style="margin-top:1.5rem">
+    <details>
+      <summary>Wrong answers ({{ failures|length }}{% if failures|length >= 40 %}+{% endif %} shown)</summary>
+      <div class="scroll"><table style="margin-top:0.75rem">
+        <thead><tr><th>Model</th><th>Task</th><th>Item</th><th class="num">Score</th><th>Expected</th><th>Got</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for f in failures %}
+          <tr>
+            <td>{{ f.model }}</td><td>{{ f.task }}</td><td>{{ f.item }}</td>
+            <td class="num">{{ '%.2f'|format(f.score) }}</td>
+            <td class="wrap">{{ f.expected if f.expected is not none else '' }}</td>
+            <td class="wrap">{{ f.got }}</td>
+            <td class="wrap">{{ f.note }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </details>
+  </div>
+  {% endif %}
+  {% endif %}
 
   <footer>
     Host: {{ manifest.host.os }} · {{ manifest.host.cpu }} · {{ manifest.host.ram_gb }} GB RAM
@@ -350,9 +484,9 @@
     const prefill = {{ prefill_json | safe }};
     const ttft = {{ ttft_json | safe }};
     const overall = {{ overall_json | safe }};
-    const quality = {{ quality_json | safe }};
-    const tools = {{ tools_json | safe }};
-    const context = {{ context_json | safe }};
+    const radarLabels = {{ radar_labels_json | safe }};
+    const radar = {{ radar_json | safe }};
+    const palette = ['#39f0ff', '#ffc857', '#ff2bd6', '#3dff9a', '#9b8cff', '#ff7a59'];
 
     new Chart(document.getElementById('chartTok'), {
       type: 'bar',
@@ -372,12 +506,12 @@
     new Chart(document.getElementById('chartQual'), {
       type: 'radar',
       data: {
-        labels: ['Quality', 'Tools', 'Context'],
-        datasets: labels.map((name, i) => ({
-          label: name,
-          data: [quality[i], tools[i], context[i]],
-          borderColor: i === 0 ? '#39f0ff' : '#ffc857',
-          backgroundColor: i === 0 ? 'rgba(57,240,255,0.15)' : 'rgba(255,200,87,0.12)'
+        labels: radarLabels,
+        datasets: radar.map((m, i) => ({
+          label: m.label,
+          data: m.data,
+          borderColor: palette[i % palette.length],
+          backgroundColor: palette[i % palette.length] + '26'
         }))
       },
       options: { scales: { r: { min: 0, max: 1, ticks: { display: false }, grid: { color: 'rgba(90,122,136,0.3)' }, angleLines: { color: 'rgba(90,122,136,0.3)' }, pointLabels: { color: '#ffc857' } } } }

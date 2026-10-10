@@ -7,6 +7,7 @@ from rich.table import Table
 from rich.text import Text
 
 from llm_bench.metrics import sparkline
+from llm_bench.report.view import capability_matrix, category_rows, speed_rows, task_rows
 from llm_bench.schema import BenchReport, SampleResult
 from llm_bench.ui.theme import console
 
@@ -99,6 +100,7 @@ def render_terminal_report(report: BenchReport) -> None:
         )
 
     # Overall scores
+    matrix = capability_matrix(report)
     score_table = Table(
         title="Overall",
         border_style="keygen.border",
@@ -107,49 +109,104 @@ def render_terminal_report(report: BenchReport) -> None:
     score_table.add_column("Rank", style="keygen.amber")
     score_table.add_column("Model", style="keygen.label")
     score_table.add_column("Overall")
-    score_table.add_column("Speed")
-    score_table.add_column("Quality")
-    score_table.add_column("Tools")
-    score_table.add_column("Context")
-
-    for i, sc in enumerate(report.scores, start=1):
+    score_table.add_column("Perf")
+    score_table.add_column("Capability")
+    score_table.add_column("Reliab.")
+    for i, row in enumerate(matrix["rows"], start=1):
         rank = "★1" if i == 1 and report.mode == "compare" else str(i)
         score_table.add_row(
             rank,
-            sc.model,
-            f"{sc.overall:.3f}",
-            f"{sc.breakdown.get('speed', 0):.3f}",
-            f"{sc.breakdown.get('quality', 0):.3f}",
-            f"{sc.breakdown.get('tools', 0):.3f}",
-            f"{sc.breakdown.get('context', 0):.3f}",
+            row["model"],
+            f"{row['overall']:.3f}",
+            _fmt3(row["performance"]),
+            _fmt3(row["capability"]),
+            f"{row['reliability']:.0%}",
         )
     console.print(score_table)
+
+    if matrix["cols"]:
+        cap_table = Table(
+            title="Capability breakdown (0–1, higher is better)",
+            border_style="keygen.border",
+            header_style="keygen.accent",
+        )
+        cap_table.add_column("Model", style="keygen.label", no_wrap=True)
+        for label in matrix["short_labels"]:
+            cap_table.add_column(label, justify="right", no_wrap=True)
+        for row in matrix["rows"]:
+            cap_table.add_row(
+                row["model"], *[_heat(row["values"].get(k)) for k in matrix["cols"]]
+            )
+        console.print(cap_table)
+
+    cats = category_rows(report)
+    if cats:
+        cat_table = Table(
+            title="Sub-scores by category",
+            border_style="keygen.border",
+            header_style="keygen.accent",
+        )
+        cat_table.add_column("Model", style="keygen.label")
+        cat_table.add_column("Task", style="keygen.amber")
+        cat_table.add_column("Categories")
+        for row in cats:
+            cat_table.add_row(
+                row["model"],
+                row["task"],
+                "  ".join(f"{c['name']} {_heat(c['value'])}" for c in row["categories"]),
+            )
+        console.print(cat_table)
+
+    speed = speed_rows(report)
+    if speed:
+        sp = Table(
+            title="Speed detail",
+            border_style="keygen.border",
+            header_style="keygen.accent",
+        )
+        sp.add_column("Model", style="keygen.label")
+        sp.add_column("Decode tok/s\nmean · p50 · p95", justify="right")
+        sp.add_column("TTFT ms\nmean · p50 · p95", justify="right")
+        sp.add_column("ITL ms\nmean · p95 · max", justify="right")
+        sp.add_column("Prefill\ntok/s", justify="right")
+        sp.add_column("Concurrent agg tok/s\n×1 · ×2 · ×4 (scaling)", justify="right")
+        for r in speed:
+            conc = " · ".join(_fmt1(r[k]) for k in ("agg_c1", "agg_c2", "agg_c4"))
+            if r["scaling_c4"]:
+                conc += f" ({r['scaling_c4']:.1f}x)"
+            sp.add_row(
+                r["model"],
+                " · ".join(_fmt1(r[k]) for k in ("decode_mean", "decode_p50", "decode_p95")),
+                " · ".join(_fmt1(r[k]) for k in ("ttft_mean", "ttft_p50", "ttft_p95")),
+                " · ".join(_fmt1(r[k]) for k in ("itl_mean", "itl_p95", "itl_max")),
+                _fmt1(r["prefill"]),
+                conc if any(r[k] for k in ("agg_c1", "agg_c2", "agg_c4")) else "—",
+            )
+        console.print(sp)
 
     # Per-task metrics
     metrics_table = Table(
         title="Task Metrics (means)",
-        border_style="magenta",
+        border_style="keygen.border",
         header_style="keygen.accent",
     )
     metrics_table.add_column("Model")
     metrics_table.add_column("Task")
-    metrics_table.add_column("Decode (tok/s)")
-    metrics_table.add_column("Prefill (tok/s)")
-    metrics_table.add_column("TTFT (ms)")
-    metrics_table.add_column("Score (0–1)")
-    metrics_table.add_column("Samples")
+    metrics_table.add_column("Score (0–1)", justify="right")
+    metrics_table.add_column("OK/Total", justify="right")
+    metrics_table.add_column("Avg tokens", justify="right")
+    metrics_table.add_column("Truncated", justify="right")
+    metrics_table.add_column("Notes")
 
-    for s in report.summaries:
-        if s.task == "setup":
-            continue
+    for r in task_rows(report):
         metrics_table.add_row(
-            s.model,
-            s.task,
-            _fmt_unit(s.metrics.get("tokens_per_sec"), "tok/s"),
-            _fmt_unit(s.metrics.get("prefill_tokens_per_sec"), "tok/s"),
-            _fmt_unit(s.metrics.get("ttft_ms"), "ms"),
-            _fmt(s.metrics.get("score") if "score" in s.metrics else s.metrics.get("success_rate")),
-            f"{s.samples - s.errors}/{s.samples}",
+            r["model"],
+            r["task"],
+            _heat(r["score"]),
+            f"{r['ok']}/{r['samples']}",
+            _fmt1(r["avg_tokens"]),
+            f"{r['truncated']:.0%}" if r["truncated"] is not None else "—",
+            ", ".join(f"{k} {v}" for k, v in r["extras"]) or "",
         )
     console.print(metrics_table)
 
@@ -211,6 +268,23 @@ def _fmt(v: object) -> str:
     if isinstance(v, float):
         return f"{v:.2f}"
     return str(v)
+
+
+def _fmt1(v: object) -> str:
+    return "—" if v is None else f"{float(v):.1f}"  # type: ignore[arg-type]
+
+
+def _fmt3(v: object) -> str:
+    return "—" if v is None else f"{float(v):.3f}"  # type: ignore[arg-type]
+
+
+def _heat(v: object) -> str:
+    """Score cell coloured by band (green >= .8, amber >= .5, red below)."""
+    if v is None:
+        return "—"
+    f = float(v)  # type: ignore[arg-type]
+    colour = "keygen.ok" if f >= 0.8 else "keygen.amber" if f >= 0.5 else "keygen.fail"
+    return f"[{colour}]{f:.2f}[/]"
 
 
 def _fmt_unit(v: object, unit: str) -> str:

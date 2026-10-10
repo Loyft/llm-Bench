@@ -14,6 +14,14 @@ class BenchTask(ABC):
     name: str
     aliases: tuple[str, ...] = ()
     requires_tools: bool = False
+    requires_code_exec: bool = False
+    # "performance" tasks measure speed; "capability" tasks measure answer quality.
+    kind: str = "capability"
+    description: str = ""
+
+    def sample_count(self, config: BenchConfig) -> int:
+        """How many samples the runner should collect for this task."""
+        return config.runs
 
     @abstractmethod
     async def run(

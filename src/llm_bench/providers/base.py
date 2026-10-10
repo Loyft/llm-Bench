@@ -110,6 +110,51 @@ class BaseProvider(ABC):
             self.workspace.register_cleanup(_sync_unload)
 
 
+def merge_tool_call_deltas(deltas: list[dict]) -> list[dict]:
+    """Merge OpenAI-style streamed tool_call fragments (keyed by ``index``) into whole calls.
+
+    Fragments without an ``index`` are treated as complete calls and passed through.
+    """
+    merged: dict[int, dict] = {}
+    complete: list[dict] = []
+    for d in deltas:
+        if "index" not in d:
+            complete.append(d)
+            continue
+        slot = merged.setdefault(
+            d["index"], {"id": None, "type": "function", "function": {"name": "", "arguments": ""}}
+        )
+        if d.get("id"):
+            slot["id"] = d["id"]
+        fn = d.get("function") or {}
+        if fn.get("name"):
+            slot["function"]["name"] += fn["name"]
+        if fn.get("arguments"):
+            slot["function"]["arguments"] += fn["arguments"]
+    return complete + [merged[i] for i in sorted(merged)]
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    """Linear-interpolated percentile (pct in 0..100)."""
+    if not values:
+        return None
+    xs = sorted(values)
+    if len(xs) == 1:
+        return xs[0]
+    k = (len(xs) - 1) * pct / 100.0
+    lo = int(k)
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
+
+
+def itl_stats(chunk_times: list[float] | None) -> tuple[float | None, float | None, float | None]:
+    """(mean, p95, max) gaps in ms between consecutive streamed chunks."""
+    if not chunk_times or len(chunk_times) < 2:
+        return None, None, None
+    gaps = [(b - a) * 1000.0 for a, b in zip(chunk_times, chunk_times[1:])]
+    return sum(gaps) / len(gaps), percentile(gaps, 95), max(gaps)
+
+
 def compute_prefill_tps(
     prompt_tokens: int | None,
     *,
@@ -137,8 +182,10 @@ def timed_chat_fields(
     decode_ms: float | None = None,
     prefill_tokens_per_sec: float | None = None,
     decode_tokens_per_sec: float | None = None,
+    chunk_times: list[float] | None = None,
 ) -> ChatResult:
     end = time.perf_counter()
+    itl_mean, itl_p95, itl_max = itl_stats(chunk_times)
     total_ms = (end - start) * 1000.0
     ttft_ms = ((first_token_at - start) * 1000.0) if first_token_at else None
     if prefill_ms is None and ttft_ms is not None:
@@ -170,6 +217,9 @@ def timed_chat_fields(
         decode_ms=decode_ms,
         prefill_tokens_per_sec=prefill_tokens_per_sec,
         decode_tokens_per_sec=tps,
+        itl_ms_mean=itl_mean,
+        itl_ms_p95=itl_p95,
+        itl_ms_max=itl_max,
         raw=raw or {},
         error=error,
     )

@@ -104,6 +104,7 @@ class OllamaProvider(BaseProvider):
         start = time.perf_counter()
         first_token_at: float | None = None
         text_parts: list[str] = []
+        chunk_times: list[float] = []
         tool_calls: list[dict] = []
         prompt_tokens = None
         completion_tokens = None
@@ -124,8 +125,10 @@ class OllamaProvider(BaseProvider):
                         msg = data.get("message") or {}
                         chunk = msg.get("content") or ""
                         if chunk:
+                            now = time.perf_counter()
                             if first_token_at is None:
-                                first_token_at = time.perf_counter()
+                                first_token_at = now
+                            chunk_times.append(now)
                             text_parts.append(chunk)
                         if msg.get("tool_calls"):
                             tool_calls.extend(msg["tool_calls"])
@@ -156,6 +159,7 @@ class OllamaProvider(BaseProvider):
                 completion_tokens=completion_tokens,
                 prompt_tokens=prompt_tokens,
                 tool_calls=tool_calls,
+                chunk_times=chunk_times,
                 prefill_ms=prefill_ms,
                 decode_ms=decode_ms,
                 prefill_tokens_per_sec=prefill_tps,
@@ -183,6 +187,7 @@ class OllamaProvider(BaseProvider):
                 completion_tokens=completion_tokens,
                 prompt_tokens=prompt_tokens,
                 tool_calls=tool_calls,
+                chunk_times=chunk_times,
                 error=str(exc),
             )
 

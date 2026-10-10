@@ -6,7 +6,6 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 
@@ -14,15 +13,23 @@ from llm_bench.benchmarks.registry import list_tasks
 from llm_bench.config import BenchConfig, RunMode
 from llm_bench.providers import get_provider
 from llm_bench.schema import ProviderName
-from llm_bench.ui.banner import render_banner
+from llm_bench.ui.banner import dialog, render_banner
 from llm_bench.ui.theme import console
 
 TASK_CHOICES = [
-    ("speed", "generation_speed — decode tok/s + prefill"),
+    ("speed", "generation_speed — decode tok/s, TTFT, inter-token latency"),
     ("latency", "prompt_latency — prefill across prompt sizes"),
-    ("context", "long_context — needle-in-haystack near context window"),
-    ("tools", "tool_calling — JSON / function calling"),
-    ("quality", "instruction_quality — offline rubrics"),
+    ("throughput", "throughput — aggregate tok/s under 1/2/4 concurrent requests"),
+    ("context", "long_context — needle retrieval across context sizes and depths"),
+    ("tools", "tool_calling — tool selection, argument accuracy, restraint"),
+    ("quality", "instruction_quality — 4-prompt sanity smoke test"),
+    ("reasoning", "reasoning — word problems, arithmetic, logic"),
+    ("knowledge", "knowledge — multiple-choice general knowledge"),
+    ("coding", "coding — write Python, graded by running unit tests"),
+    ("instructions", "instruction_following — IFEval-style verifiable constraints"),
+    ("hallucination", "hallucination — abstain / correct false premises / answer controls"),
+    ("multi_turn", "multi_turn — memory, corrections, system-prompt persistence"),
+    ("consistency", "consistency — answer stability at temperature 0.8"),
 ]
 
 CONTEXT_PRESETS = [2048, 4096, 8192, 16384, 32768, 65536]
@@ -70,10 +77,11 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
     d = defaults or {}
     console.print(render_banner())
     console.print(
-        Panel(
-            "[keygen.amber]SETUP WIZARD[/]\n"
-            "[keygen.dim]Pick from the lists, or type a custom value when offered.[/]",
-            border_style="keygen.border",
+        dialog(
+            "SETUP",
+            "[keygen.title]Configure your run[/]\n"
+            "[keygen.dim]Pick from the lists, or type a custom value when offered. "
+            "Music starts only once the run does.[/]",
         )
     )
 
@@ -150,7 +158,7 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
     alias_to_idx = {alias: i + 1 for i, (alias, _) in enumerate(TASK_CHOICES)}
     if isinstance(default_tasks, list):
         nums = [str(alias_to_idx[x]) for x in default_tasks if x in alias_to_idx]
-        default_task_str = ",".join(nums) or "1,2,5"
+        default_task_str = ",".join(nums) or "all"
     elif isinstance(default_tasks, str) and default_tasks.strip().lower() == "all":
         default_task_str = "all"
     elif isinstance(default_tasks, str):
@@ -161,7 +169,7 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
         else:
             default_task_str = default_tasks
     else:
-        default_task_str = "1,2,5"
+        default_task_str = "all"
     t_raw = Prompt.ask(
         "Task #s (comma-separated) or 'all'",
         default=default_task_str,
@@ -204,8 +212,17 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
     mode_default = str(d.get("mode") or "sequential")
     mode = Prompt.ask("Mode", choices=["sequential", "parallel"], default=mode_default)
 
-    runs = IntPrompt.ask("Runs per task", default=int(d.get("runs") or 3))
+    runs = IntPrompt.ask("Runs for speed/latency tasks", default=int(d.get("runs") or 3))
+    max_items = IntPrompt.ask(
+        "Max items per capability task (0 = full bank, e.g. 5 for a quick pass)",
+        default=int(d.get("max_items") or 0),
+    )
     warmup = IntPrompt.ask("Warmup runs", default=int(d.get("warmup") or 1))
+
+    music = Confirm.ask(
+        "Play background music during the run? (never while you configure or after it ends)",
+        default=bool(d.get("music", True)),
+    )
 
     report_dir = Prompt.ask(
         "Report directory",
@@ -213,7 +230,7 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
     )
 
     console.print()
-    summary = Table(title="Run plan", border_style="magenta", header_style="keygen.accent")
+    summary = Table(title="Run plan", border_style="keygen.border", header_style="keygen.accent")
     summary.add_column("Key", style="keygen.label")
     summary.add_column("Value", style="keygen.amber")
     summary.add_row("provider", provider)
@@ -224,6 +241,8 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
     summary.add_row("tools", "on" if tools else "off")
     summary.add_row("mode", mode)
     summary.add_row("runs / warmup", f"{runs} / {warmup}")
+    summary.add_row("max items", str(max_items) if max_items else "full bank")
+    summary.add_row("music", "on" if music else "off")
     summary.add_row("report", report_dir)
     console.print(summary)
 
@@ -240,6 +259,10 @@ def run_wizard(defaults: dict[str, Any] | None = None) -> BenchConfig:
         mode=RunMode(mode),
         runs=runs,
         warmup=warmup,
+        max_items=max_items or None,
+        code_exec=bool(d.get("code_exec", True)),
+        music=music,
+        music_path=Path(d["music_path"]).expanduser() if d.get("music_path") else None,
         report_dir=Path(report_dir),
         keep_workspace=bool(d.get("keep_workspace") or False),
         workspace=Path(d["workspace"]).expanduser() if d.get("workspace") else None,

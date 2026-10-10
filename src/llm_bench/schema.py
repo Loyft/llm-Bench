@@ -66,6 +66,10 @@ class ChatResult(BaseModel):
     decode_ms: float | None = None
     prefill_tokens_per_sec: float | None = None
     decode_tokens_per_sec: float | None = None
+    # Inter-token latency over streamed chunks (None when the provider cannot stream)
+    itl_ms_mean: float | None = None
+    itl_ms_p95: float | None = None
+    itl_ms_max: float | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 
@@ -105,6 +109,11 @@ class ModelScore(BaseModel):
     model: str
     provider: str
     overall: float
+    # Sub-indices: how fast the model runs vs. how well it answers.
+    performance: float | None = None
+    capability: float | None = None
+    # Share of samples that completed without a provider/transport error.
+    reliability: float = 1.0
     breakdown: dict[str, float] = Field(default_factory=dict)
     tasks: dict[str, TaskSummary] = Field(default_factory=dict)
 

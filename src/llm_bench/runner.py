@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -89,7 +88,7 @@ class BenchRunner:
             await self._warmup(provider, model)
 
             for task in tasks:
-                for run_index in range(self.config.runs):
+                for run_index in range(task.sample_count(self.config)):
                     if memory is not None:
                         memory.set_label(f"{model.label}/{task.name}#{run_index}")
                     self._emit(
@@ -139,7 +138,11 @@ class BenchRunner:
         self.workspace.install_signal_handlers()
         started = datetime.now(timezone.utc)
         models = self._model_refs()
-        tasks = resolve_tasks(self.config.tasks, tools_enabled=self.config.tools)
+        tasks = resolve_tasks(
+            self.config.tasks,
+            tools_enabled=self.config.tools,
+            code_exec_enabled=self.config.code_exec,
+        )
 
         provider = get_provider(
             self.config.provider,
@@ -181,13 +184,20 @@ class BenchRunner:
             config=self.config.model_dump(mode="json"),
         )
 
-        self._emit("run_start", run_id=manifest.run_id, models=manifest.models)
-
         if not tasks:
             raise RuntimeError(
-                "No tasks selected to run. Check --tasks / --tools "
-                "(tool-calling tasks are skipped when --tools off)."
+                "No tasks selected to run. Check --tasks / --tools / --no-code-exec "
+                "(tool-calling is skipped when --tools off, coding when code exec is off)."
             )
+
+        total_samples = len(models) * sum(t.sample_count(self.config) for t in tasks)
+        self._emit(
+            "run_start",
+            run_id=manifest.run_id,
+            models=manifest.models,
+            total_samples=total_samples,
+            plan=[(t.name, t.sample_count(self.config)) for t in tasks],
+        )
 
         all_samples: list[SampleResult] = []
         memory = MemoryMonitor(

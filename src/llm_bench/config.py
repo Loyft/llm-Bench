@@ -22,13 +22,37 @@ class ToolsMode(str, Enum):
     OFF = "off"
 
 
+ALL_TASKS = [
+    "speed",
+    "latency",
+    "throughput",
+    "context",
+    "tools",
+    "quality",
+    "reasoning",
+    "knowledge",
+    "coding",
+    "instructions",
+    "hallucination",
+    "multi_turn",
+    "consistency",
+]
+PERFORMANCE_TASKS = ["speed", "latency", "throughput"]
+CAPABILITY_TASKS = [t for t in ALL_TASKS if t not in PERFORMANCE_TASKS]
+TASK_PRESETS = {
+    "all": ALL_TASKS,
+    "performance": PERFORMANCE_TASKS,
+    "capability": CAPABILITY_TASKS,
+}
+
+
 class BenchConfig(BaseModel):
     provider: ProviderName = ProviderName.OLLAMA
     models: list[str] = Field(default_factory=list)
     base_url: str | None = None
     context: int = 8192
     tools: bool = True
-    tasks: list[str] = Field(default_factory=lambda: ["speed", "quality", "tools", "context"])
+    tasks: list[str] = Field(default_factory=lambda: list(ALL_TASKS))
     mode: RunMode = RunMode.SEQUENTIAL
     concurrency: int = 2
     runs: int = 3
@@ -40,6 +64,14 @@ class BenchConfig(BaseModel):
     seed: int = 42
     system: str | None = None
     interactive: bool = False
+    # Cap on items per capability task (None = full bank). Useful for quick runs.
+    max_items: int | None = None
+    # Coding task executes model-written Python in a subprocess; allow turning it off.
+    code_exec: bool = True
+    # Background music (with synced visuals) on the live run screen only.
+    music: bool = True
+    music_path: Path | None = None
+    music_volume: float = Field(default=0.7, ge=0.0, le=1.0)
 
     @field_validator("models")
     @classmethod
@@ -52,12 +84,24 @@ class BenchConfig(BaseModel):
     @classmethod
     def parse_tasks(cls, v: Any) -> list[str]:
         if v is None:
-            return ["speed", "quality", "tools", "context"]
-        if isinstance(v, str):
-            if v.strip().lower() == "all":
-                return ["speed", "latency", "context", "tools", "quality"]
-            return [t.strip() for t in v.split(",") if t.strip()]
-        return list(v)
+            return list(ALL_TASKS)
+        names = [t.strip() for t in v.split(",")] if isinstance(v, str) else list(v)
+        out: list[str] = []
+        for name in names:
+            if not name:
+                continue
+            out.extend(TASK_PRESETS.get(name.lower(), [name]))
+        return list(dict.fromkeys(out))
+
+    @field_validator("max_items", mode="before")
+    @classmethod
+    def parse_max_items(cls, v: Any) -> int | None:
+        if v in (None, "", 0, "0"):
+            return None
+        n = int(v)
+        if n < 0:
+            raise ValueError("max_items must be >= 0")
+        return n
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -68,7 +112,7 @@ class BenchConfig(BaseModel):
             return v.strip().lower() in {"on", "true", "1", "yes"}
         return bool(v)
 
-    @field_validator("report_dir", "workspace", mode="before")
+    @field_validator("report_dir", "workspace", "music_path", mode="before")
     @classmethod
     def parse_path(cls, v: Any) -> Path | None:
         if v is None or v == "":
@@ -102,6 +146,11 @@ def merge_config(
     timeout: float | None = None,
     seed: int | None = None,
     system: str | None = None,
+    max_items: int | None = None,
+    code_exec: bool | None = None,
+    music: bool | None = None,
+    music_path: Path | str | None = None,
+    music_volume: float | None = None,
 ) -> BenchConfig:
     data: dict[str, Any] = dict(yaml_data or {})
     # YAML may use report_dir; CLI uses --report
@@ -141,6 +190,16 @@ def merge_config(
         overrides["seed"] = seed
     if system is not None:
         overrides["system"] = system
+    if max_items is not None:
+        overrides["max_items"] = max_items
+    if code_exec is not None:
+        overrides["code_exec"] = code_exec
+    if music is not None:
+        overrides["music"] = music
+    if music_path is not None:
+        overrides["music_path"] = music_path
+    if music_volume is not None:
+        overrides["music_volume"] = music_volume
 
     data.update({k: v for k, v in overrides.items() if v is not None})
     return BenchConfig.model_validate(data)

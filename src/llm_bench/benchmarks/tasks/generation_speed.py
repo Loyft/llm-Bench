@@ -8,10 +8,17 @@ from llm_bench.config import BenchConfig
 from llm_bench.providers.base import BaseProvider
 from llm_bench.schema import ChatMessage, ChatRequest, ModelRef, SampleResult
 
+PROMPT = (
+    "Write a detailed explanation of how a CPU executes instructions, "
+    "covering fetch, decode, execute, and write-back. Use clear paragraphs."
+)
+
 
 class GenerationSpeedTask(BenchTask):
     name = "generation_speed"
     aliases = ("speed",)
+    kind = "performance"
+    description = "decode tok/s, TTFT and inter-token latency on a 256-token generation"
 
     async def run(
         self,
@@ -21,10 +28,7 @@ class GenerationSpeedTask(BenchTask):
         *,
         run_index: int,
     ) -> SampleResult:
-        prompt = (
-            "Write a detailed explanation of how a CPU executes instructions, "
-            "covering fetch, decode, execute, and write-back. Use clear paragraphs."
-        )
+        prompt = PROMPT
         req = ChatRequest(
             model=model,
             messages=[ChatMessage(role="user", content=prompt)],

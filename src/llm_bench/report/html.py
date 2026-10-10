@@ -8,6 +8,14 @@ from typing import Any
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+from llm_bench.report.view import (
+    capability_matrix,
+    category_rows,
+    failures,
+    health_rows,
+    speed_rows,
+    task_rows,
+)
 from llm_bench.schema import BenchReport
 
 
@@ -39,9 +47,9 @@ def _profile_metrics(report: BenchReport) -> dict[str, Any]:
         "prefill_tps": prefill,
         "ttft_ms": ttft,
         "overall": sc.overall if sc else 0.0,
-        "quality": sc.breakdown.get("quality", 0.0) if sc else 0.0,
-        "tools": sc.breakdown.get("tools", 0.0) if sc else 0.0,
-        "context": sc.breakdown.get("context", 0.0) if sc else 0.0,
+        "performance": sc.performance if sc else None,
+        "capability": sc.capability if sc else None,
+        "reliability": sc.reliability if sc else 1.0,
     }
 
 
@@ -57,9 +65,6 @@ def write_html_report(report: BenchReport, dest: Path) -> Path:
     prefill = []
     ttft = []
     overall = [s.overall for s in report.scores]
-    quality = []
-    tools = []
-    context = []
 
     for sc in report.scores:
         speed = sc.tasks.get("generation_speed") or sc.tasks.get("speed")
@@ -77,26 +82,12 @@ def write_html_report(report: BenchReport, dest: Path) -> Path:
         tok_s.append(float(tps) if isinstance(tps, (int, float)) else 0.0)
         prefill.append(float(pref) if isinstance(pref, (int, float)) else 0.0)
         ttft.append(float(tt) if isinstance(tt, (int, float)) else 0.0)
-        quality.append(sc.breakdown.get("quality", 0.0))
-        tools.append(sc.breakdown.get("tools", 0.0))
-        context.append(sc.breakdown.get("context", 0.0))
 
-    metric_keys = [
-        "tokens_per_sec",
-        "prefill_tokens_per_sec",
-        "ttft_ms",
-        "score",
-        "success_rate",
+    matrix = capability_matrix(report)
+    radar = [
+        {"label": row["model"], "data": [row["values"].get(k) or 0.0 for k in matrix["cols"]]}
+        for row in matrix["rows"]
     ]
-    heatmap = []
-    for s in report.summaries:
-        if s.task == "setup":
-            continue
-        row: dict[str, Any] = {"model": s.model, "task": s.task}
-        for k in metric_keys:
-            v = s.metrics.get(k)
-            row[k] = float(v) if isinstance(v, (int, float)) else None
-        heatmap.append(row)
 
     errors = [
         {"model": s.model, "task": s.task, "error": s.error}
@@ -122,10 +113,14 @@ def write_html_report(report: BenchReport, dest: Path) -> Path:
         prefill_json=json.dumps(prefill),
         ttft_json=json.dumps(ttft),
         overall_json=json.dumps(overall),
-        quality_json=json.dumps(quality),
-        tools_json=json.dumps(tools),
-        context_json=json.dumps(context),
-        heatmap=heatmap,
+        matrix=matrix,
+        radar_labels_json=json.dumps(matrix["labels"]),
+        radar_json=json.dumps(radar),
+        speed=speed_rows(report),
+        categories=category_rows(report),
+        tasks=task_rows(report),
+        health=health_rows(report),
+        failures=failures(report),
         scores=report.scores,
         summaries=report.summaries,
         errors=errors,

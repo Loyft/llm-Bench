@@ -7,7 +7,10 @@ models:
 # base_url: http://127.0.0.1:11434
 context: 8192
 tools: true
-tasks: [speed, quality, tools, context]
+# all | performance | capability | explicit list, e.g. [speed, reasoning, coding]
+tasks: all
+# max_items: 5      # quick pass: cap items per capability task
+# code_exec: false  # never execute model-written code (skips the coding task)
 mode: sequential
 # concurrency: 2
 runs: 3
@@ -17,3 +20,6 @@ report_dir: ./reports
 # keep_workspace: false
 # timeout: 120
 # seed: 42
+# music: true            # play a background track on the live run screen only
+# music_path: ~/my-tunes  # a file or a folder; default: the bundled playlist
+# music_volume: 0.7     # starting volume 0.0-1.0; p / +/- adjust it during the run

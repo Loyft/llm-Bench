@@ -9,7 +9,7 @@ from typing import Any, Optional
 import typer
 
 from llm_bench import __version__
-from llm_bench.benchmarks.registry import list_tasks
+from llm_bench.benchmarks.registry import aliases, task_catalog
 from llm_bench.config import BenchConfig, load_yaml_config, merge_config
 from llm_bench.report.html import write_html_report
 from llm_bench.report.terminal import render_terminal_report
@@ -58,11 +58,17 @@ def list_providers() -> None:
 def list_tasks_cmd() -> None:
     """List benchmark tasks and aliases."""
     console.print("[keygen.title]Tasks[/]")
-    for name in list_tasks():
-        console.print(f"  [keygen.label]{name}[/]")
-    console.print(
-        "\n[keygen.dim]Aliases: speed, latency, context, tools, quality, all[/]"
-    )
+    alias_for: dict[str, list[str]] = {}
+    for alias, target in aliases().items():
+        alias_for.setdefault(target, []).append(alias)
+    for kind in ("performance", "capability"):
+        console.print(f"\n[keygen.accent]{kind}[/]")
+        for t in (t for t in task_catalog() if t.kind == kind):
+            al = ", ".join(sorted(alias_for.get(t.name, [])))
+            console.print(f"  [keygen.label]{t.name:<22}[/] {t.description}")
+            if al:
+                console.print(f"  {'':<22} [keygen.dim]aliases: {al}[/]")
+    console.print("\n[keygen.dim]Presets: all, performance, capability[/]")
 
 
 @app.command("run")
@@ -77,7 +83,24 @@ def run(
     base_url: Optional[str] = typer.Option(None, "--base-url"),
     context: Optional[int] = typer.Option(None, "--context"),
     tools: Optional[str] = typer.Option(None, "--tools", help="on|off"),
-    tasks: Optional[str] = typer.Option(None, "--tasks", help="comma list or all"),
+    tasks: Optional[str] = typer.Option(
+        None, "--tasks", help="comma list, or preset: all | performance | capability"
+    ),
+    max_items: Optional[int] = typer.Option(
+        None, "--max-items", help="cap items per capability task (quick runs); 0 = full bank"
+    ),
+    no_music: bool = typer.Option(
+        False, "--no-music", help="no background music / visuals sync during the run"
+    ),
+    music: Optional[Path] = typer.Option(
+        None, "--music", help="audio file or folder to play (default: bundled playlist)"
+    ),
+    volume: Optional[float] = typer.Option(
+        None, "--volume", min=0.0, max=1.0, help="starting music volume 0.0-1.0 (default 0.7)"
+    ),
+    no_code_exec: bool = typer.Option(
+        False, "--no-code-exec", help="skip the coding task (never execute model-written code)"
+    ),
     mode: Optional[str] = typer.Option(None, "--mode", help="sequential|parallel"),
     concurrency: Optional[int] = typer.Option(None, "--concurrency"),
     runs: Optional[int] = typer.Option(None, "--runs"),
@@ -121,6 +144,11 @@ def run(
         "timeout": timeout,
         "seed": seed,
         "system": system,
+        "max_items": max_items,
+        "code_exec": False if no_code_exec else None,
+        "music": False if no_music else None,
+        "music_path": music,
+        "music_volume": volume,
     }.items():
         if value is not None:
             defaults[key] = value
@@ -149,16 +177,54 @@ def run(
     _execute(config)
 
 
+def _prepare_music(config: BenchConfig):  # type: ignore[no-untyped-def]
+    """Resolve the playlist and analyse each track for the visuals.
+
+    Returns (player | None, fallback visuals, label for the boot screen).
+    """
+    from llm_bench.audio import MusicPlayer, Track, find_playlist, load_visuals
+    from llm_bench.audio.player import player_backend
+
+    if not config.music:
+        return None, load_visuals(None), None
+    paths = find_playlist(config.music_path)
+    if not paths:
+        return None, load_visuals(None), "no track found (visuals only)"
+    with console.status("[keygen.label]analysing module(s)…[/]", spinner="dots"):
+        tracks = []
+        for path in paths:
+            vis = load_visuals(path)
+            tracks.append(Track(path, vis.duration, vis))
+    label = f"{len(tracks)} track{'s' if len(tracks) != 1 else ''}"
+    if player_backend() is None:
+        return None, tracks[0].visuals, f"{label} (no audio player; visuals only)"
+    return MusicPlayer(tracks, volume=config.music_volume), tracks[0].visuals, label
+
+
 def _execute(config: BenchConfig) -> None:
     from llm_bench.benchmarks.registry import resolve_tasks
 
-    task_objs = resolve_tasks(config.tasks, tools_enabled=config.tools)
+    task_objs = resolve_tasks(
+        config.tasks, tools_enabled=config.tools, code_exec_enabled=config.code_exec
+    )
     task_names = [t.name for t in task_objs]
 
-    boot_sequence(provider=config.provider.value, models=config.models, tasks=task_names)
+    player, visuals, music_label = _prepare_music(config)
+    boot_sequence(
+        provider=config.provider.value,
+        models=config.models,
+        tasks=task_names,
+        music=music_label,
+    )
 
     ws = create_workspace(root=config.workspace, keep=config.keep_workspace)
-    live = BenchLiveDisplay(models=config.models, tasks=task_names, runs=config.runs)
+    live = BenchLiveDisplay(
+        models=config.models,
+        tasks=task_names,
+        runs=max(1, sum(t.sample_count(config) for t in task_objs) // max(1, len(task_names))),
+        player=player,
+        visuals=visuals,
+    )
 
     def on_progress(event: str, payload: dict) -> None:
         live.handle(event, payload)

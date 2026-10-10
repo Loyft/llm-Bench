@@ -7,7 +7,7 @@ import time
 
 import httpx
 
-from llm_bench.providers.base import BaseProvider, timed_chat_fields
+from llm_bench.providers.base import BaseProvider, merge_tool_call_deltas, timed_chat_fields
 from llm_bench.schema import ChatRequest, ChatResult, ModelRef, ProviderName
 
 
@@ -107,6 +107,7 @@ class OpenAICompatProvider(BaseProvider):
         start = time.perf_counter()
         first_token_at: float | None = None
         text_parts: list[str] = []
+        chunk_times: list[float] = []
         tool_calls: list[dict] = []
         completion_tokens = None
         prompt_tokens = None
@@ -130,8 +131,10 @@ class OpenAICompatProvider(BaseProvider):
                         delta = choice.get("delta") or {}
                         chunk = delta.get("content") or ""
                         if chunk:
+                            now = time.perf_counter()
                             if first_token_at is None:
-                                first_token_at = time.perf_counter()
+                                first_token_at = now
+                            chunk_times.append(now)
                             text_parts.append(chunk)
                         if delta.get("tool_calls"):
                             tool_calls.extend(delta["tool_calls"])
@@ -150,7 +153,8 @@ class OpenAICompatProvider(BaseProvider):
                 first_token_at=first_token_at,
                 completion_tokens=completion_tokens,
                 prompt_tokens=prompt_tokens,
-                tool_calls=tool_calls,
+                tool_calls=merge_tool_call_deltas(tool_calls),
+                chunk_times=chunk_times,
             )
         except Exception as exc:
             return timed_chat_fields(
@@ -159,7 +163,8 @@ class OpenAICompatProvider(BaseProvider):
                 first_token_at=first_token_at,
                 completion_tokens=completion_tokens,
                 prompt_tokens=prompt_tokens,
-                tool_calls=tool_calls,
+                tool_calls=merge_tool_call_deltas(tool_calls),
+                chunk_times=chunk_times,
                 error=str(exc),
             )
 

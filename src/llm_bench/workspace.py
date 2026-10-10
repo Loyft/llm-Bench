@@ -16,7 +16,6 @@ from typing import Any
 
 import psutil
 
-
 CleanupHook = Callable[[], Any] | Callable[[], Awaitable[Any]]
 
 
