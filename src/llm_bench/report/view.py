@@ -237,3 +237,96 @@ def _failure_row(s: SampleResult, score: float) -> dict[str, Any]:
         "got": str(shown)[:200] if shown is not None else "",
         "note": d.get("tests_passed") or d.get("exec_error") or "",
     }
+
+
+def speed_series(report: BenchReport) -> tuple[list[float], list[float], list[float]]:
+    """Per-model (decode tok/s, prefill tok/s, TTFT ms); 0.0 where not measured."""
+    tok_s: list[float] = []
+    prefill: list[float] = []
+    ttft: list[float] = []
+    for sc in report.scores:
+        speed = sc.tasks.get("generation_speed") or sc.tasks.get("speed")
+        latency = sc.tasks.get("prompt_latency") or sc.tasks.get("latency")
+        src = speed or latency
+        tps = pref = tt = None
+        if src:
+            tps = src.metrics.get("tokens_per_sec")
+            pref = src.metrics.get("prefill_tokens_per_sec")
+            tt = src.metrics.get("ttft_ms")
+        if pref is None and latency:
+            pref = latency.metrics.get("prefill_tokens_per_sec")
+        tok_s.append(float(tps) if isinstance(tps, (int, float)) else 0.0)
+        prefill.append(float(pref) if isinstance(pref, (int, float)) else 0.0)
+        ttft.append(float(tt) if isinstance(tt, (int, float)) else 0.0)
+    return tok_s, prefill, ttft
+
+
+def _insights_from(
+    report: BenchReport,
+    matrix: dict[str, Any],
+    speed: list[dict[str, Any]],
+    health: list[dict[str, Any]],
+    tok_s: list[float],
+    ttft: list[float],
+) -> list[dict[str, str]]:
+    """Plain-language takeaways, each tagged so the template can badge it."""
+    out: list[dict[str, str]] = []
+    scores = report.scores
+    if not scores:
+        return out
+    multi = len(scores) > 1
+    best = max(scores, key=lambda x: x.overall)
+    out.append(
+        {
+            "tag": "TOP" if multi else "SCORE",
+            "text": f"{best.model} scores {best.overall:.3f} overall"
+            + (
+                f" — {best.overall - sorted(x.overall for x in scores)[-2]:.3f} ahead of the runner-up."
+                if multi
+                else "."
+            ),
+        }
+    )
+    if multi and any(tok_s):
+        i = max(range(len(tok_s)), key=lambda k: tok_s[k])
+        out.append({"tag": "SPEED", "text": f"{scores[i].model} decodes fastest at {tok_s[i]:.1f} tok/s."})
+        if scores[i].model != best.model:
+            out.append(
+                {
+                    "tag": "TRADE-OFF",
+                    "text": f"The fastest model ({scores[i].model}) is not the best overall: speed and quality diverge here.",
+                }
+            )
+    live_ttft = [(t, k) for k, t in enumerate(ttft) if t > 0]
+    if multi and live_ttft:
+        t, k = min(live_ttft)
+        out.append({"tag": "LATENCY", "text": f"{scores[k].model} answers soonest: {t:.0f} ms to first token."})
+    for row in matrix["rows"]:
+        vals = [(v, lbl) for v, lbl in zip((row["values"][c] for c in matrix["cols"]), matrix["labels"]) if v is not None]
+        if len(vals) >= 2:
+            lo, hi = min(vals), max(vals)
+            if hi[0] - lo[0] >= 0.05:
+                out.append(
+                    {
+                        "tag": "PROFILE",
+                        "text": f"{row['model']}: strongest at {hi[1]} ({hi[0]:.2f}), weakest at {lo[1]} ({lo[0]:.2f}).",
+                    }
+                )
+    for h in health:
+        if h["reliability"] < 0.999:
+            out.append({"tag": "WARN", "text": f"{h['model']} failed {100 - h['reliability'] * 100:.0f}% of samples (provider/transport errors)."})
+        if h["truncated"] and h["truncated"] >= 0.05:
+            out.append({"tag": "WARN", "text": f"{h['model']} hit the token budget on {h['truncated'] * 100:.0f}% of responses — answers may be cut off."})
+    for r in speed:
+        if r["scaling_c4"] and not 0.8 < r["scaling_c4"] < 1.3:
+            out.append({"tag": "SCALING", "text": f"{r['model']}: 4 concurrent requests yield {r['scaling_c4']:.1f}x single-stream throughput."})
+    return out[:10]
+
+
+
+def build_insights(report: BenchReport) -> list[dict[str, str]]:
+    """Plain-language takeaways shared by the HTML and terminal reports."""
+    tok_s, _, ttft = speed_series(report)
+    return _insights_from(
+        report, capability_matrix(report), speed_rows(report), health_rows(report), tok_s, ttft
+    )

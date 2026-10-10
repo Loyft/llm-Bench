@@ -41,7 +41,7 @@ After each run you get:
 
 ### Scoring
 
-`overall = 0.3 × performance + 0.7 × capability`, renormalised over whatever you ran. Capability is a weighted mean of the categories that ran (reasoning 20%, coding 20%, knowledge 15%, instructions 12%, tools 10%, context 8%, hallucination 7%, multi-turn 4%, sanity 3%, consistency 1%). Performance blends decode/TTFT (70%) and prefill (30%); with several models these are normalised against each other, with one model against fixed reference bands. A request that errors counts as a wrong answer, not as a missing one.
+`overall = 0.3 × performance + 0.7 × capability`, renormalised over whatever you ran. Capability is a weighted mean of the categories that ran (reasoning 20%, coding 20%, knowledge 15%, instructions 12%, tools 10%, context 8%, hallucination 7%, multi-turn 4%, sanity 3%, consistency 1%). Performance blends decode/TTFT (70%) and prefill (30%); with several models each is scored as a fraction of the best one (a 20% speed gap is a 0.8, not a 0.0), with one model against fixed reference bands. A request that errors counts as a wrong answer, not as a missing one.
 
 The scores are for comparing models run on the same machine with this tool. They are small fixed banks (10–22 items per task), so differences of a few points are noise — read the per-category and per-item detail, and use the item banks in `src/llm_bench/benchmarks/tasks/` as a starting point if you need something larger.
 
@@ -49,34 +49,23 @@ Every run is sandboxed in a workspace. When the run finishes (or aborts), llm-be
 
 ### CLI
 
-![llm-bench CLI — boot sequence, live progress, and terminal summary](docs/images/cli.png)
+While the benchmark runs, the terminal turns into a mission-control screen (tracker-style layout): channel bars and scope follow the music, a live log streams each sample's result, and the progress row shows an ETA. (Screens below show a three-model comparison on a local Ollama.)
+
+![llm-bench live run screen — mission-control take on a tracker layout with VU bars, result log, ETA and scrolling pattern view](docs/images/run.png)
+
+When the run finishes you get the boot screen, a mission debrief with plain-language takeaways, ASCII bar charts, the capability breakdown, per-category sub-scores and speed percentiles:
+
+![llm-bench CLI — mission-control boot screen, debrief, ASCII bar charts, capability breakdown, sub-scores and speed detail](docs/images/cli.png)
 
 ### Report
 
-![llm-bench HTML report — test specs, raw profile metrics, memory timeline, and results table](docs/images/report.png)
+The self-contained HTML report adds a mission debrief, a speed-vs-quality star map, speed bars, capability radar, score mix, needle-recall and concurrency charts, a memory timeline and the capability breakdown:
 
-## The live run screen
+![llm-bench HTML report — test specs, debrief, leaderboard, star map, speed bars, radar, score mix, memory timeline and capability breakdown](docs/images/report.png)
 
-While benchmarks run, the terminal switches to a tracker-style screen (tan desktop, black bevelled panels, yellow channel bars, a scrolling note pattern) instead of a progress bar:
+…followed by the detail tables: sub-scores by category, speed percentiles and inter-token latency, run health, per-task results, and a list of wrong answers.
 
-- **VU bars and scope** react to the song that is playing; the **pattern view** scrolls its real note onsets.
-- **ETA** next to the progress bar: each remaining sample is priced at its own task's observed average duration (so a quick knowledge question and a slow coding task are not treated alike); it shows `--:--` until the first sample finishes. Model load time is not included, so treat it as a lower-bound guide.
-- **Header fields** show the run ID, models, current model/task/sample (`Order` / `Pattern` / `Row`), live decode speed and pass rate; a log panel streams each sample's PASS / FAIL / tok/s.
-- It adapts to the terminal size (full layout from about 100×34, compact below 64×20).
-
-**Music plays only while the benchmark runs** — not in the setup wizard, and it is stopped before the final report prints (also on Ctrl+C). A playlist of free-to-use tracks (`src/llm_bench/assets/music/keygen-*.mp3`) plays one song after the other and wraps around. Use your own with `--music PATH` (a file or a folder) or `$LLM_BENCH_MUSIC`; see that folder's README. `--no-music` disables sound and the beat-sync.
-
-**Controls during the run** (when stdin is a terminal):
-
-| Key | Action |
-|-----|--------|
-| `p` / `Space` | pause / resume the music (the visuals pause with it) |
-| `+` / `-` (or `↑` / `↓`) | volume up / down in 5% steps; the header shows a volume bar |
-| `n` / `→` | next song |
-| `b` / `←` | previous song (restarts the current one if it is more than 3 s in) |
-| `Ctrl+C` | abort the run (music stops, terminal is restored) |
-
-Pause freezes the player process, so resume continues mid-song. Volume is a start-up option of the players, so a change restarts playback at the same position (a burst of key presses is coalesced into one restart). `--volume 0.0–1.0` sets the starting level (default 0.7). Playback shells out to `afplay` / `ffplay` / `mpv`; the visuals fall back to a synthetic animation if there is no track or `ffmpeg`.
+![llm-bench HTML report, lower half — sub-scores, speed detail, run health and per-task results](docs/images/report-detail.png)
 
 ## Install
 

@@ -9,11 +9,13 @@ from typing import Any
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from llm_bench.report.view import (
+    build_insights,
     capability_matrix,
     category_rows,
     failures,
     health_rows,
     speed_rows,
+    speed_series,
     task_rows,
 )
 from llm_bench.schema import BenchReport
@@ -53,6 +55,19 @@ def _profile_metrics(report: BenchReport) -> dict[str, Any]:
     }
 
 
+def _needle_series(report: BenchReport) -> list[dict[str, Any]]:
+    """Long-context recall at 10/50/90% depth, per model."""
+    out = []
+    for row in category_rows(report):
+        if row["task"] != "long_context":
+            continue
+        by = {c["name"]: c["value"] for c in row["categories"]}
+        keys = ["needle @10%", "needle @50%", "needle @90%"]
+        if all(k in by for k in keys):
+            out.append({"label": row["model"], "data": [by[k] for k in keys]})
+    return out
+
+
 def write_html_report(report: BenchReport, dest: Path) -> Path:
     env = Environment(
         loader=PackageLoader("llm_bench.report", "templates"),
@@ -61,33 +76,40 @@ def write_html_report(report: BenchReport, dest: Path) -> Path:
     template = env.get_template("report.html.j2")
 
     labels = [s.model for s in report.scores]
-    tok_s = []
-    prefill = []
-    ttft = []
     overall = [s.overall for s in report.scores]
-
-    for sc in report.scores:
-        speed = sc.tasks.get("generation_speed") or sc.tasks.get("speed")
-        latency = sc.tasks.get("prompt_latency") or sc.tasks.get("latency")
-        tps = None
-        pref = None
-        tt = None
-        src = speed or latency
-        if src:
-            tps = src.metrics.get("tokens_per_sec")
-            pref = src.metrics.get("prefill_tokens_per_sec")
-            tt = src.metrics.get("ttft_ms")
-        if pref is None and latency:
-            pref = latency.metrics.get("prefill_tokens_per_sec")
-        tok_s.append(float(tps) if isinstance(tps, (int, float)) else 0.0)
-        prefill.append(float(pref) if isinstance(pref, (int, float)) else 0.0)
-        ttft.append(float(tt) if isinstance(tt, (int, float)) else 0.0)
+    tok_s, prefill, ttft = speed_series(report)
 
     matrix = capability_matrix(report)
     radar = [
         {"label": row["model"], "data": [row["values"].get(k) or 0.0 for k in matrix["cols"]]}
         for row in matrix["rows"]
     ]
+
+    speed = speed_rows(report)
+    health = health_rows(report)
+    scaling = [
+        {"label": r["model"], "data": [r["agg_c1"], r["agg_c2"], r["agg_c4"]]}
+        for r in speed
+        if r["agg_c1"] or r["agg_c2"] or r["agg_c4"]
+    ]
+    star_map = [
+        {
+            "label": sc.model,
+            "x": tok_s[i],
+            "y": sc.capability if sc.capability is not None else sc.overall,
+        }
+        for i, sc in enumerate(report.scores)
+    ]
+    composition = [
+        {
+            "label": sc.model,
+            "performance": sc.performance,
+            "capability": sc.capability,
+            "reliability": sc.reliability,
+        }
+        for sc in report.scores
+    ]
+    insights = build_insights(report)
 
     errors = [
         {"model": s.model, "task": s.task, "error": s.error}
@@ -116,10 +138,15 @@ def write_html_report(report: BenchReport, dest: Path) -> Path:
         matrix=matrix,
         radar_labels_json=json.dumps(matrix["labels"]),
         radar_json=json.dumps(radar),
-        speed=speed_rows(report),
+        speed=speed,
+        insights=insights,
+        needle_json=json.dumps(_needle_series(report)),
+        scaling_json=json.dumps(scaling),
+        star_json=json.dumps(star_map),
+        composition_json=json.dumps(composition),
         categories=category_rows(report),
         tasks=task_rows(report),
-        health=health_rows(report),
+        health=health,
         failures=failures(report),
         scores=report.scores,
         summaries=report.summaries,

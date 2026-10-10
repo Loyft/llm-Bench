@@ -8,352 +8,370 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   {% endif %}
   <style>
+    /* "Mars Colony 1995": the future as imagined from a mid-90s sci-fi poster.
+       Dusk-violet sky bleeding into Martian rust, cream ink, double-ruled
+       mission-log panels, ASCII spacecraft. Each model keeps one colour everywhere. */
     :root {
-      --bg: #070a0f;
-      --panel: #0d1520;
-      --cyan: #39f0ff;
-      --magenta: #ff2bd6;
-      --amber: #ffc857;
-      --text: #d8f6ff;
-      --muted: #5a7a88;
-      --ok: #3dff9a;
-      --border: #1e3a4c;
-      --font: "IBM Plex Mono", "SF Mono", "Consolas", monospace;
+      --sky-1: #12072a;
+      --sky-2: #2a0f3d;
+      --sky-3: #5a1c3a;
+      --dust: #8a3523;
+      --panel: rgba(16, 8, 34, 0.84);
+      --cream: #f6e7c8;
+      --dim: #b9a7c9;
+      --coral: #ff7a59;
+      --gold: #ffc857;
+      --mint: #7fe0c3;
+      --peri: #9bb0ff;
+      --rose: #ff8fb8;
+      --bad: #ff5a5a;
+      --rule: rgba(246, 231, 200, 0.22);
+      --mono: "IBM Plex Mono", "SF Mono", ui-monospace, "Consolas", monospace;
+      --m0: var(--gold); --m1: var(--mint); --m2: var(--coral);
+      --m3: var(--peri); --m4: var(--rose); --m5: var(--cream);
     }
     * { box-sizing: border-box; }
+    html { background: var(--sky-1); }
     body {
       margin: 0;
-      font-family: var(--font);
-      background:
-        radial-gradient(ellipse at top, #122033 0%, var(--bg) 55%),
-        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(57,240,255,0.03) 3px);
-      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--cream);
       min-height: 100vh;
-      padding: 2rem;
+      background: linear-gradient(180deg, var(--sky-1) 0, var(--sky-2) 35%, var(--sky-3) 75%, var(--dust) 100%) fixed;
+      counter-reset: sec;
     }
-    h1 {
-      margin: 0 0 0.25rem;
-      font-size: 1.8rem;
-      color: var(--cyan);
-      letter-spacing: 0.08em;
-      text-shadow: 0 0 12px rgba(57,240,255,0.45);
+    body::before { /* stars */
+      content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .75;
+      background-image:
+        radial-gradient(1px 1px at 8% 12%, #fff 50%, transparent 51%),
+        radial-gradient(1px 1px at 23% 40%, #fff 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 37% 8%, var(--gold) 50%, transparent 51%),
+        radial-gradient(1px 1px at 52% 27%, #fff 50%, transparent 51%),
+        radial-gradient(1px 1px at 66% 55%, #fff 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 78% 14%, var(--peri) 50%, transparent 51%),
+        radial-gradient(1px 1px at 91% 36%, #fff 50%, transparent 51%),
+        radial-gradient(1px 1px at 15% 72%, #fff 50%, transparent 51%),
+        radial-gradient(1px 1px at 47% 83%, #fff 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 85% 78%, var(--rose) 50%, transparent 51%);
     }
-    .sub { color: var(--amber); margin-bottom: 1rem; font-size: 0.9rem; }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-    .card {
+    .wrap { position: relative; max-width: 1180px; margin: 0 auto; padding: 0 1.4rem 3rem; }
+    pre { margin: 0; font-family: var(--mono); }
+
+    /* ---------- masthead ---------- */
+    .mast { position: relative; padding: 2rem 0 1.4rem; display: grid; grid-template-columns: auto 1fr auto; gap: 1.5rem; align-items: center; }
+    .mast .art { font-size: .62rem; line-height: 1.12; color: var(--gold); white-space: pre; }
+    .mast .art.planet { color: var(--coral); }
+    .mast .center { text-align: center; min-width: 0; }
+    .kicker { font-size: .66rem; letter-spacing: .38em; text-transform: uppercase; color: var(--dim); }
+    .banner { display: inline-block; margin: .7rem 0 .4rem; font-size: min(.82rem, 1.45vw); line-height: 1.05; letter-spacing: 0;
+      white-space: pre; color: var(--cream);
+      background: linear-gradient(180deg, var(--gold) 0, var(--coral) 55%, var(--rose) 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; text-align: left; }
+    .orbit { color: var(--dim); font-size: .7rem; white-space: pre; overflow: hidden; }
+    .sub { margin-top: .6rem; display: flex; gap: .5rem 1rem; flex-wrap: wrap; justify-content: center; font-size: .78rem; color: var(--dim); }
+    .badge { display: inline-block; padding: .05rem .7rem; border: 1px solid var(--gold); color: var(--gold); font-size: .68rem; letter-spacing: .22em; }
+    .badge.fail { border-color: var(--bad); color: var(--bad); }
+    .horizon { color: var(--coral); font-size: .72rem; white-space: pre; overflow: hidden; text-align: center; opacity: .8; }
+    @media (max-width: 820px) { .mast { grid-template-columns: 1fr; } .mast .art { display: none; } .banner { font-size: 1.4vw; } }
+
+    /* ---------- panels: double-ruled mission-log frames ---------- */
+    .panel {
+      position: relative; margin: 2rem 0 1.6rem; min-width: 0;
       background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 1rem 1.1rem;
-      box-shadow: 0 0 0 1px rgba(255,43,214,0.08), inset 0 0 40px rgba(57,240,255,0.03);
+      border: 4px double var(--cream);
+      padding: 1.6rem 1.3rem 1.2rem;
     }
-    .card h3 {
-      margin: 0 0 0.5rem;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--magenta);
+    .panel > h2 {
+      counter-increment: sec;
+      position: absolute; top: -.85rem; left: 1rem; margin: 0; padding: 0 .6rem;
+      font-size: .78rem; font-weight: 600; letter-spacing: .24em; text-transform: uppercase;
+      color: var(--gold); background: var(--sky-2); white-space: nowrap;
     }
-    .big {
-      font-size: 1.8rem;
-      color: var(--cyan);
-    }
-    .value {
-      font-size: 1.55rem;
-      color: var(--cyan);
-      line-height: 1.2;
-    }
-    .value .unit {
-      font-size: 0.85rem;
-      color: var(--amber);
-      margin-left: 0.25rem;
-    }
-    .muted { color: var(--muted); font-size: 0.8rem; }
-    .spec-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 0.75rem 1.25rem;
-    }
-    .spec-grid dt {
-      color: var(--muted);
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin: 0;
-    }
-    .spec-grid dd {
-      margin: 0.15rem 0 0;
-      color: var(--amber);
-      font-size: 0.95rem;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.85rem;
-    }
-    th, td {
-      border-bottom: 1px solid var(--border);
-      padding: 0.55rem 0.4rem;
-      text-align: left;
-    }
-    th { color: var(--amber); font-weight: 600; }
-    tr:hover td { background: rgba(57,240,255,0.04); }
-    .charts {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 1rem;
-      margin: 1.5rem 0;
-    }
-    canvas { max-height: 280px; }
-    footer {
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px dashed var(--border);
-      color: var(--muted);
-      font-size: 0.75rem;
-    }
-    .badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border: 1px solid var(--cyan);
-      color: var(--cyan);
-      border-radius: 2px;
-      font-size: 0.7rem;
-      letter-spacing: 0.1em;
-    }
-    .badge.fail { border-color: #ff4d6d; color: #ff4d6d; }
-    .errors {
-      background: #1a0a10;
-      border: 1px solid #ff4d6d;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-      border-radius: 4px;
-    }
-    .errors h3 { color: #ff4d6d; margin: 0 0 0.75rem; }
-    .errors li { margin: 0.35rem 0; color: #ffc0cb; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .cell { position: relative; text-align: right; font-variant-numeric: tabular-nums; }
-    .cell.g { color: var(--ok); } .cell.y { color: var(--amber); } .cell.r { color: #ff4d6d; }
-    .bar { height: 3px; background: var(--border); margin-top: 3px; border-radius: 2px; }
-    .bar > i { display: block; height: 100%; background: currentColor; border-radius: 2px; }
-    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    .chip { border: 1px solid var(--border); padding: 0.1rem 0.45rem; border-radius: 2px; font-size: 0.75rem; }
-    .chip b { color: var(--cyan); font-weight: 600; }
+    .panel > h2::before { content: "╣ SECTOR " counter(sec, decimal-leading-zero) " ▸ "; color: var(--coral); }
+    .panel > h2::after { content: " ╠"; color: var(--coral); }
+    .panel .corner { position: absolute; color: var(--gold); font-size: .8rem; line-height: 1; }
+    .panel .corner.br { right: -.55rem; bottom: -.5rem; }
+    .panel .corner.tr { right: -.55rem; top: -.5rem; }
+    .note { color: var(--dim); font-size: .74rem; margin: .5rem 0 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 0 1.6rem; }
+    .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+    .sub-h { margin: 0 0 .6rem; font-size: .7rem; letter-spacing: .2em; text-transform: uppercase; color: var(--mint); }
+    .sub-h small { color: var(--dim); letter-spacing: .05em; text-transform: none; }
+
+    /* ---------- spec sheet with dot leaders ---------- */
+    .spec { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: .15rem 2.2rem; margin: 0; }
+    .spec div { display: flex; gap: .5rem; align-items: baseline; }
+    .spec dt { color: var(--dim); text-transform: uppercase; font-size: .68rem; letter-spacing: .14em; white-space: nowrap; }
+    .spec .lead { flex: 1; border-bottom: 2px dotted var(--rule); transform: translateY(-3px); min-width: 1rem; }
+    .spec .wide { grid-column: 1 / -1; }
+    .spec .wide dd { max-width: 85%; }
+    .spec dd { margin: 0; text-align: right; max-width: 60%; word-break: break-word; }
+
+    /* ---------- debrief ---------- */
+    .insights { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+    .insights li { display: grid; grid-template-columns: 6.5rem 1fr; gap: .8rem; align-items: baseline; }
+    .tag { font-size: .62rem; letter-spacing: .16em; text-align: center; padding: .08rem .3rem; border: 1px solid currentColor; }
+    .tag.TOP, .tag.SCORE { color: var(--gold); } .tag.SPEED, .tag.LATENCY { color: var(--mint); }
+    .tag.TRADE-OFF, .tag.SCALING { color: var(--peri); } .tag.PROFILE { color: var(--rose); } .tag.WARN { color: var(--bad); }
+
+    /* ---------- leaderboard / model colours ---------- */
+    .m0 { --c: var(--m0); } .m1 { --c: var(--m1); } .m2 { --c: var(--m2); }
+    .m3 { --c: var(--m3); } .m4 { --c: var(--m4); } .m5 { --c: var(--m5); }
+    .ship { border: 1px solid var(--rule); padding: .8rem .9rem; position: relative; }
+    .ship.lead-ship { border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c); }
+    .ship .rank { font-size: .64rem; letter-spacing: .2em; color: var(--c); text-transform: uppercase; }
+    .ship .name { font-size: 1.15rem; font-weight: 600; color: var(--c); word-break: break-word; margin: .15rem 0; }
+    .ship .score { font-size: 2.2rem; line-height: 1; color: var(--cream); }
+    .ship .score small { font-size: .7rem; color: var(--dim); margin-left: .4rem; letter-spacing: .1em; }
+    .ship .meta { margin-top: .5rem; font-size: .72rem; color: var(--dim); }
+    .ship .meta b { color: var(--cream); font-weight: 500; }
+    .swatch { display: inline-block; width: .7rem; height: .7rem; background: var(--c); margin-right: .45rem; }
+
+    .value { font-size: 2rem; line-height: 1.1; color: var(--gold); }
+    .value .unit { font-size: .72rem; color: var(--coral); letter-spacing: .14em; text-transform: uppercase; margin-left: .35rem; }
+
+    /* ---------- ascii bars ---------- */
+    .arow { display: grid; grid-template-columns: 1fr auto; column-gap: .75rem; padding: .3rem 0 .45rem; }
+    .arow .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c); }
+    .arow .val { color: var(--cream); font-variant-numeric: tabular-nums; }
+    .atrack { grid-column: 1 / -1; display: block; position: relative; overflow: hidden; white-space: nowrap; line-height: 1.1;
+      font-size: 1.05rem; letter-spacing: .1em; color: rgba(246,231,200,.16); }
+    .afill { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: var(--c); }
+    .legend { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; font-size: .74rem; margin-bottom: .8rem; }
+    .legend span { color: var(--c); } .legend span::before { content: "■ "; }
+    .chartbox { position: relative; height: 320px; }
+    .chartbox.short { height: 250px; }
+
+    /* ---------- tables ---------- */
     .scroll { overflow-x: auto; }
-    details summary { cursor: pointer; color: var(--magenta); letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.75rem; }
-    td.wrap { white-space: normal; max-width: 36ch; word-break: break-word; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: .77rem; }
+    th, td { padding: .45rem .4rem; text-align: left; border-bottom: 1px dotted var(--rule); }
+    th { font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; color: var(--gold); border-bottom: 1px solid var(--cream); white-space: nowrap; }
+    th .muted { color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
+    tbody tr:hover td { background: rgba(255,200,87,.07); }
+    td.mn { color: var(--c); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: var(--dim); font-size: .74rem; }
+    .cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cell .gl { letter-spacing: -.05em; margin-right: .35rem; }
+    .cell.g { color: var(--mint); } .cell.y { color: var(--gold); } .cell.r { color: var(--bad); } .cell.n { color: var(--dim); }
+    .chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .chip { border: 1px solid var(--rule); padding: 0 .5rem; font-size: .72rem; }
+    .chip b { color: var(--gold); font-weight: 600; }
+    td.wrap { white-space: normal; min-width: 16ch; max-width: 34ch; overflow-wrap: break-word; color: var(--dim); }
+    details summary { cursor: pointer; letter-spacing: .18em; text-transform: uppercase; font-size: .76rem; color: var(--gold); }
+    .errors { border: 4px double var(--bad); background: rgba(60,8,12,.85); padding: 1rem 1.3rem; margin: 1.5rem 0; }
+    .errors h2 { margin: 0 0 .6rem; font-size: .78rem; letter-spacing: .2em; text-transform: uppercase; color: var(--bad); }
+    .errors li { margin: .3rem 0; }
+    code { background: rgba(246,231,200,.1); padding: 0 .3rem; }
+
+    footer { margin-top: 2.2rem; text-align: center; font-size: .7rem; color: var(--dim); }
+    footer pre { color: var(--coral); font-size: .7rem; line-height: 1.1; margin-bottom: .6rem; }
   </style>
 </head>
 <body>
-  <h1>LLM-BENCH // REPORT</h1>
-  <div class="sub">
-    <span class="badge">{{ mode | upper }}</span>
-    {% if not ok %}<span class="badge fail">FAILED</span>{% endif %}
-    &nbsp; run {{ manifest.run_id }} &nbsp;·&nbsp;
-    provider {{ manifest.provider.value }} &nbsp;·&nbsp;
-    {{ manifest.model_count }} model(s)
-  </div>
+{% set colors = ['m0','m1','m2','m3','m4','m5'] %}
+{% set mclass = {} %}
+{% for sc in scores %}{% set _ = mclass.update({sc.model: colors[loop.index0 % 6]}) %}{% endfor %}
+<div class="wrap">
+  <header class="mast">
+<pre class="art" aria-hidden="true">      /\
+     /  \
+    / () \
+   |  __  |
+   | |  | |
+   | |__| |
+  /|  []  |\
+ / |      | \
+/__|______|__\
+   /_/||\_\
+     /||\
+    ' || '
+     '  '</pre>
+    <div class="center">
+      <div class="kicker">◦ Local model performance &amp; capability survey ◦</div>
+<pre class="banner" aria-label="LLM-BENCH">██      ██      ██      ██          ████    ██████  ██    ██  ██████  ██  ██
+██      ██      ████  ████          ██  ██  ██      ████  ██  ██      ██  ██
+██      ██      ██  ██  ██  ██████  ████    ████    ██  ████  ██      ██████
+██      ██      ██      ██          ██  ██  ██      ██    ██  ██      ██  ██
+██████  ██████  ██      ██          ████    ██████  ██    ██  ██████  ██  ██</pre>
+      <div class="orbit" aria-hidden="true">·  ˙  ·   ˙ . ·  ˙ ─ ─ ─ ─ ═══ ◜ MISSION LOG {{ manifest.run_id }} ◝ ═══ ─ ─ ─ ─ ˙  ·  . ˙  ·</div>
+      <div class="sub">
+        <span class="badge">{{ mode | upper }}</span>
+        {% if not ok %}<span class="badge fail">FAILED</span>{% endif %}
+        <span>provider ▸ {{ manifest.provider.value }}</span>
+        <span>crew ▸ {{ manifest.model_count }} model{{ '' if manifest.model_count == 1 else 's' }}</span>
+      </div>
+    </div>
+<pre class="art planet" aria-hidden="true">    _.-~~~~~-._
+  .'  o    .   '.
+ /  .   O     .  \
+|~~~~~~~~~~~~~~~~~|
+ \  .    o   .   /
+  '._    .   _.'
+     '~-----~'
+ ·   ˙     ·    ˙</pre>
+  </header>
+  <div class="horizon" aria-hidden="true">▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁▂▃▄▅▆▇█▇▆▅▄▃▂▁</div>
 
-  <div class="card" style="margin-bottom:1.5rem">
-    <h3>Test specifications</h3>
-    <dl class="spec-grid">
-      <div>
-        <dt>Models</dt>
-        <dd>{{ manifest.models | join(', ') }}</dd>
-      </div>
-      <div>
-        <dt>Provider</dt>
-        <dd>{{ manifest.provider.value }}</dd>
-      </div>
-      <div>
-        <dt>Tasks</dt>
-        <dd>{{ manifest.tasks | join(', ') }}</dd>
-      </div>
-      <div>
-        <dt>Context</dt>
-        <dd>{{ manifest.context }} tokens</dd>
-      </div>
-      <div>
-        <dt>Tools</dt>
-        <dd>{{ 'on' if manifest.tools else 'off' }}</dd>
-      </div>
-      <div>
-        <dt>Mode</dt>
-        <dd>{{ manifest.mode }}</dd>
-      </div>
-      <div>
-        <dt>Runs / warmup</dt>
-        <dd>{{ manifest.runs }} / {{ manifest.warmup }}</dd>
-      </div>
-      <div>
-        <dt>Host</dt>
-        <dd>{{ manifest.host.os }}{% if manifest.host.gpu %} · {{ manifest.host.gpu }}{% endif %}</dd>
-      </div>
+  <section class="panel">
+    <h2>Test specifications</h2>
+    <dl class="spec">
+      {% set rows = [
+        ('Models', manifest.models | join(', ')),
+        ('Provider', manifest.provider.value),
+        ('Tasks', manifest.tasks | join(', ')),
+        ('Context', manifest.context ~ ' tokens'),
+        ('Tools', 'on' if manifest.tools else 'off'),
+        ('Mode', manifest.mode),
+        ('Runs / warmup', manifest.runs ~ ' / ' ~ manifest.warmup),
+        ('Host', manifest.host.os ~ (' · ' ~ manifest.host.gpu if manifest.host.gpu else '')),
+      ] %}
+      {% for k, v in rows %}<div{% if v|string|length > 38 %} class="wide"{% endif %}><dt>{{ k }}</dt><span class="lead"></span><dd>{{ v }}</dd></div>{% endfor %}
     </dl>
-  </div>
+    <span class="corner br">✦</span>
+  </section>
 
   {% if errors %}
   <div class="errors">
-    <h3>Errors — no usable metrics{% if not ok %} (empty run){% endif %}</h3>
+    <h2>⚠ Errors — no usable metrics{% if not ok %} (empty run){% endif %}</h2>
     <ul>
-      {% for e in errors %}
-      <li><strong>{{ e.model }}</strong> / {{ e.task }}: {{ e.error }}</li>
-      {% endfor %}
+      {% for e in errors %}<li><strong>{{ e.model }}</strong> / {{ e.task }}: {{ e.error }}</li>{% endfor %}
     </ul>
   </div>
   {% endif %}
 
   {% if ok %}
-  <div class="grid">
-    {% for sc in scores %}
-    <div class="card">
-      <h3>{% if mode == 'compare' and loop.first %}★ WINNER{% else %}MODEL{% endif %}</h3>
-      <div class="big">{{ sc.model }}</div>
-      <div class="muted">
-        overall {{ '%.3f'|format(sc.overall) }}
-        {% if sc.performance is not none %}· performance {{ '%.2f'|format(sc.performance) }}{% endif %}
-        {% if sc.capability is not none %}· capability {{ '%.2f'|format(sc.capability) }}{% endif %}
-        · reliability {{ '%.0f'|format(sc.reliability * 100) }}%
+  {% macro heat(v) -%}
+    {%- if v is none -%}<td class="cell n">—</td>
+    {%- else -%}
+      {%- set glyph = '█' if v >= 0.9 else ('▓' if v >= 0.7 else ('▒' if v >= 0.5 else ('░' if v >= 0.25 else '·'))) -%}
+      <td class="cell {{ 'g' if v >= 0.8 else ('y' if v >= 0.5 else 'r') }}"><span class="gl">{{ glyph * 4 }}</span>{{ '%.2f'|format(v) }}</td>
+    {%- endif -%}
+  {%- endmacro %}
+
+  <section class="panel">
+    <h2>Mission debrief</h2>
+    <ul class="insights">
+      {% for i in insights %}<li><span class="tag {{ i.tag }}">{{ i.tag }}</span><span>{{ i.text }}</span></li>{% endfor %}
+    </ul>
+    <span class="corner tr">✦</span>
+  </section>
+
+  <section class="panel">
+    <h2>{% if scores|length > 1 %}Leaderboard{% else %}Flight summary{% endif %}</h2>
+    <div class="grid-cards">
+      {% for sc in scores %}
+      <div class="ship {{ mclass[sc.model] }}{% if mode == 'compare' and loop.first %} lead-ship{% endif %}">
+        <div class="rank">{% if mode == 'compare' %}{% if loop.first %}★ Flagship{% else %}Rank {{ loop.index }}{% endif %}{% else %}Subject{% endif %}</div>
+        <div class="name"><span class="swatch"></span>{{ sc.model }}</div>
+        <div class="score">{{ '%.3f'|format(sc.overall) }}<small>OVERALL</small></div>
+        <div class="meta">
+          {% if sc.performance is not none %}perf <b>{{ '%.2f'|format(sc.performance) }}</b> · {% endif %}
+          {% if sc.capability is not none %}capability <b>{{ '%.2f'|format(sc.capability) }}</b> · {% endif %}
+          reliability <b>{{ '%.0f'|format(sc.reliability * 100) }}%</b>
+        </div>
       </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
+    <div class="note">Overall blends performance (speed) with capability (answer quality); reliability is the share of samples that completed without a provider error.</div>
+  </section>
 
   {% if mode == 'profile' %}
-  <div class="grid">
-    <div class="card">
-      <h3>Decode speed</h3>
-      <div class="value">{{ '%.2f'|format(profile_metrics.decode_tps) if profile_metrics.decode_tps is not none else '—' }}{% if profile_metrics.decode_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div>
-      <div class="muted">mean generation throughput</div>
+  <section class="panel">
+    <h2>Telemetry</h2>
+    <div class="grid-cards">
+      <div><div class="sub-h">Decode speed</div><div class="value">{{ '%.2f'|format(profile_metrics.decode_tps) if profile_metrics.decode_tps is not none else '—' }}{% if profile_metrics.decode_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div><div class="muted">mean generation throughput</div></div>
+      <div><div class="sub-h">Prefill speed</div><div class="value">{{ '%.1f'|format(profile_metrics.prefill_tps) if profile_metrics.prefill_tps is not none else '—' }}{% if profile_metrics.prefill_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div><div class="muted">prompt eval throughput</div></div>
+      <div><div class="sub-h">TTFT</div><div class="value">{{ '%.1f'|format(profile_metrics.ttft_ms) if profile_metrics.ttft_ms is not none else '—' }}{% if profile_metrics.ttft_ms is not none %}<span class="unit">ms</span>{% endif %}</div><div class="muted">time to first token</div></div>
+      <div><div class="sub-h">Peak model RAM</div><div class="value">{{ '%.0f'|format(memory.peak_model_ram_mb) if memory.peak_model_ram_mb is not none else '—' }}{% if memory.peak_model_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div><div class="muted">weights in memory</div></div>
+      <div><div class="sub-h">Peak KV-cache</div><div class="value">{{ '%.0f'|format(memory.peak_kv_ram_mb) if memory.peak_kv_ram_mb is not none else '—' }}{% if memory.peak_kv_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div><div class="muted">estimated context cache</div></div>
     </div>
-    <div class="card">
-      <h3>Prefill speed</h3>
-      <div class="value">{{ '%.1f'|format(profile_metrics.prefill_tps) if profile_metrics.prefill_tps is not none else '—' }}{% if profile_metrics.prefill_tps is not none %}<span class="unit">tok/s</span>{% endif %}</div>
-      <div class="muted">prompt eval throughput</div>
-    </div>
-    <div class="card">
-      <h3>TTFT</h3>
-      <div class="value">{{ '%.1f'|format(profile_metrics.ttft_ms) if profile_metrics.ttft_ms is not none else '—' }}{% if profile_metrics.ttft_ms is not none %}<span class="unit">ms</span>{% endif %}</div>
-      <div class="muted">time to first token</div>
-    </div>
-    <div class="card">
-      <h3>Overall score</h3>
-      <div class="value">{{ '%.3f'|format(profile_metrics.overall) }}</div>
-      <div class="muted">
-        {% if profile_metrics.performance is not none %}performance {{ '%.2f'|format(profile_metrics.performance) }}{% endif %}
-        {% if profile_metrics.capability is not none %}· capability {{ '%.2f'|format(profile_metrics.capability) }}{% endif %}
-        · reliability {{ '%.0f'|format(profile_metrics.reliability * 100) }}%
-      </div>
-    </div>
-    <div class="card">
-      <h3>Peak model RAM</h3>
-      <div class="value">{{ '%.0f'|format(memory.peak_model_ram_mb) if memory.peak_model_ram_mb is not none else '—' }}{% if memory.peak_model_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div>
-      <div class="muted">weights in memory</div>
-    </div>
-    <div class="card">
-      <h3>Peak KV-cache</h3>
-      <div class="value">{{ '%.0f'|format(memory.peak_kv_ram_mb) if memory.peak_kv_ram_mb is not none else '—' }}{% if memory.peak_kv_ram_mb is not none %}<span class="unit">MB</span>{% endif %}</div>
-      <div class="muted">estimated context cache</div>
-    </div>
-  </div>
+  </section>
   {% else %}
-  <div class="charts">
-    <div class="card">
-      <h3>Decode tok/s</h3>
-      <canvas id="chartTok"></canvas>
+  <section class="panel">
+    <h2>Star map</h2>
+    <div class="note" style="margin:0 0 .6rem">Where each model sits on the speed / quality plane. Up and to the right is best.</div>
+    <div class="chartbox"><canvas id="chartStar"></canvas></div>
+    <span class="corner br">✦</span>
+  </section>
+
+  <section class="panel">
+    <h2>Speed telemetry</h2>
+    <div class="grid">
+      <div><div class="sub-h">Decode <small>tok/s · higher is better</small></div><div id="barTok"></div></div>
+      <div><div class="sub-h">Prefill <small>tok/s · higher is better</small></div><div id="barPrefill"></div></div>
+      <div><div class="sub-h">Time to first token <small>ms · lower is better</small></div><div id="barTtft"></div></div>
+      <div><div class="sub-h">Overall score <small>0 – 1</small></div><div id="barOverall"></div></div>
     </div>
-    <div class="card">
-      <h3>Prefill tok/s</h3>
-      <canvas id="chartPrefill"></canvas>
+  </section>
+
+  <section class="panel">
+    <h2>Capability radar &amp; score mix</h2>
+    <div class="grid">
+      <div><div class="sub-h">Capability radar <small>0 – 1 per skill</small></div><div class="chartbox"><canvas id="chartQual"></canvas></div></div>
+      <div><div class="sub-h">Score composition <small>what drives the overall</small></div><div class="chartbox"><canvas id="chartMix"></canvas></div></div>
     </div>
-    <div class="card">
-      <h3>TTFT (ms)</h3>
-      <canvas id="chartTtft"></canvas>
-    </div>
-    <div class="card">
-      <h3>Capability radar</h3>
-      <canvas id="chartQual"></canvas>
-    </div>
-    <div class="card">
-      <h3>Overall Score</h3>
-      <canvas id="chartOverall"></canvas>
-    </div>
-  </div>
+  </section>
   {% endif %}
 
-  <div class="card" style="margin-top:1rem">
-    <h3>Memory over time (MB)</h3>
-    <div class="muted" style="margin-bottom:0.75rem">
+  <section class="panel" id="secLong" hidden>
+    <h2>Context &amp; concurrency</h2>
+    <div class="grid">
+      <div id="boxNeedle"><div class="sub-h">Needle recall by depth <small>does it forget the middle?</small></div><div class="chartbox short"><canvas id="chartNeedle"></canvas></div></div>
+      <div id="boxScale"><div class="sub-h">Throughput scaling <small>aggregate tok/s at ×1 ×2 ×4 requests</small></div><div class="chartbox short"><canvas id="chartScale"></canvas></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Memory over time</h2>
+    <div class="note" style="margin:0 0 .7rem">
       peaks — system {{ '%.0f'|format(memory.peak_system_used_mb) }} MB ·
       process {{ '%.0f'|format(memory.peak_process_rss_mb) }} MB ·
       model {{ '%.0f'|format(memory.peak_model_ram_mb) if memory.peak_model_ram_mb is not none else '—' }}{% if memory.peak_model_ram_mb is not none %} MB{% endif %} ·
       kv {{ '%.0f'|format(memory.peak_kv_ram_mb) if memory.peak_kv_ram_mb is not none else '—' }}{% if memory.peak_kv_ram_mb is not none %} MB{% endif %} ·
       context {{ '%.0f'|format(memory.peak_context_ram_mb) if memory.peak_context_ram_mb is not none else '—' }}{% if memory.peak_context_ram_mb is not none %} MB{% endif %}
     </div>
-    <canvas id="chartMem"></canvas>
-  </div>
-  {% else %}
-  <div class="card">
-    <h3>Empty report</h3>
-    <p class="muted">Start the provider (e.g. <code>ollama serve</code>), confirm the model exists, then re-run.</p>
-  </div>
-  {% endif %}
-
-  {% if ok %}
-  {% macro heat(v) -%}
-    {%- if v is none -%}<td class="cell">—</td>
-    {%- else -%}<td class="cell {{ 'g' if v >= 0.8 else ('y' if v >= 0.5 else 'r') }}">{{ '%.2f'|format(v) }}<div class="bar"><i style="width: {{ (v * 100)|round|int }}%"></i></div></td>
-    {%- endif -%}
-  {%- endmacro %}
+    <div class="chartbox short"><canvas id="chartMem"></canvas></div>
+  </section>
 
   {% if matrix.cols %}
-  <div class="card" style="margin-top:1.5rem">
-    <h3>Capability breakdown (0–1)</h3>
+  <section class="panel">
+    <h2>Capability breakdown</h2>
     <div class="scroll"><table>
-      <thead><tr>
-        <th>Model</th>
-        {% for label in matrix.labels %}<th class="num">{{ label }}</th>{% endfor %}
-      </tr></thead>
+      <thead><tr><th>Model</th>{% for label in matrix.labels %}<th class="num">{{ label }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for row in matrix.rows %}
-        <tr>
-          <td>{{ row.model }}</td>
-          {% for k in matrix.cols %}{{ heat(row['values'][k]) }}{% endfor %}
-        </tr>
+        <tr><td class="mn {{ mclass[row.model] }}">{{ row.model }}</td>{% for k in matrix.cols %}{{ heat(row['values'][k]) }}{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table></div>
-  </div>
+    <div class="note">shade: █ ≥0.9 · ▓ ≥0.7 · ▒ ≥0.5 · ░ ≥0.25 · · below</div>
+  </section>
   {% endif %}
 
   {% if categories %}
-  <div class="card" style="margin-top:1.5rem">
-    <h3>Sub-scores by category</h3>
+  <section class="panel">
+    <h2>Sub-scores by category</h2>
     <div class="scroll"><table>
       <thead><tr><th>Model</th><th>Task</th><th>Categories</th></tr></thead>
       <tbody>
         {% for row in categories %}
         <tr>
-          <td>{{ row.model }}</td>
-          <td>{{ row.task }}</td>
-          <td><div class="chips">
-            {% for c in row.categories %}<span class="chip">{{ c.name }} <b>{{ '%.2f'|format(c.value) }}</b></span>{% endfor %}
-          </div></td>
+          <td class="mn {{ mclass[row.model] }}">{{ row.model }}</td><td>{{ row.task }}</td>
+          <td><div class="chips">{% for c in row.categories %}<span class="chip">{{ c.name }} <b>{{ '%.2f'|format(c.value) }}</b></span>{% endfor %}</div></td>
         </tr>
         {% endfor %}
       </tbody>
     </table></div>
-  </div>
+  </section>
   {% endif %}
 
   {% if speed %}
-  <div class="card" style="margin-top:1.5rem">
-    <h3>Speed detail</h3>
+  <section class="panel">
+    <h2>Speed detail</h2>
     <div class="scroll"><table>
       <thead><tr>
         <th>Model</th>
@@ -367,7 +385,7 @@
         {% macro f1(v) %}{{ '%.1f'|format(v) if v is not none else '—' }}{% endmacro %}
         {% for r in speed %}
         <tr>
-          <td>{{ r.model }}</td>
+          <td class="mn {{ mclass[r.model] }}">{{ r.model }}</td>
           <td class="num">{{ f1(r.decode_mean) }} · {{ f1(r.decode_p50) }} · {{ f1(r.decode_p95) }}</td>
           <td class="num">{{ f1(r.ttft_mean) }} · {{ f1(r.ttft_p50) }} · {{ f1(r.ttft_p95) }}</td>
           <td class="num">{{ f1(r.itl_mean) }} · {{ f1(r.itl_p95) }} · {{ f1(r.itl_max) }}</td>
@@ -377,17 +395,17 @@
         {% endfor %}
       </tbody>
     </table></div>
-  </div>
+  </section>
   {% endif %}
 
-  <div class="card" style="margin-top:1.5rem">
-    <h3>Run health</h3>
+  <section class="panel">
+    <h2>Run health</h2>
     <div class="scroll"><table>
       <thead><tr><th>Model</th><th class="num">Reliability</th><th class="num">Avg tokens / response</th><th class="num">Truncated</th><th class="num">Empty</th></tr></thead>
       <tbody>
         {% for r in health %}
         <tr>
-          <td>{{ r.model }}</td>
+          <td class="mn {{ mclass[r.model] }}">{{ r.model }}</td>
           <td class="num">{{ '%.0f%%'|format(r.reliability * 100) }}</td>
           <td class="num">{{ '%.0f'|format(r.avg_tokens) if r.avg_tokens is not none else '—' }}</td>
           <td class="num">{{ '%.0f%%'|format(r.truncated * 100) if r.truncated is not none else '—' }}</td>
@@ -396,30 +414,21 @@
         {% endfor %}
       </tbody>
     </table></div>
-    <div class="muted" style="margin-top:0.5rem">Truncated = response hit the token budget (answer may be cut off; common with long reasoning traces).</div>
-  </div>
+    <div class="note">Truncated = response hit the token budget (answer may be cut off; common with long reasoning traces).</div>
+  </section>
 
-  <div class="card" style="margin-top:1.5rem">
-    <h3>Per-task results</h3>
+  <section class="panel">
+    <h2>Per-task results</h2>
     <div class="scroll"><table>
-      <thead>
-        <tr>
-          <th>Model</th>
-          <th>Task</th>
-          <th class="num">Score (0–1)</th>
-          <th class="num">OK / total</th>
-          <th class="num">Decode (tok/s)</th>
-          <th class="num">Prefill (tok/s)</th>
-          <th class="num">TTFT (ms)</th>
-          <th class="num">Avg tokens</th>
-          <th class="num">Truncated</th>
-          <th>Notes</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th>Model</th><th>Task</th><th class="num">Score (0–1)</th><th class="num">OK / total</th>
+        <th class="num">Decode (tok/s)</th><th class="num">Prefill (tok/s)</th><th class="num">TTFT (ms)</th>
+        <th class="num">Avg tokens</th><th class="num">Truncated</th><th>Notes</th>
+      </tr></thead>
       <tbody>
         {% for r in tasks %}
         <tr>
-          <td>{{ r.model }}</td>
+          <td class="mn {{ mclass[r.model] }}">{{ r.model }}</td>
           <td>{{ r.task }}</td>
           {{ heat(r.score) }}
           <td class="num">{{ r.ok }}/{{ r.samples }}</td>
@@ -433,18 +442,19 @@
         {% endfor %}
       </tbody>
     </table></div>
-  </div>
+  </section>
 
   {% if failures %}
-  <div class="card" style="margin-top:1.5rem">
+  <section class="panel">
+    <h2>Wrong answers</h2>
     <details>
-      <summary>Wrong answers ({{ failures|length }}{% if failures|length >= 40 %}+{% endif %} shown)</summary>
-      <div class="scroll"><table style="margin-top:0.75rem">
+      <summary>{{ failures|length }}{% if failures|length >= 40 %}+{% endif %} shown — expand</summary>
+      <div class="scroll"><table style="margin-top:.75rem">
         <thead><tr><th>Model</th><th>Task</th><th>Item</th><th class="num">Score</th><th>Expected</th><th>Got</th><th>Note</th></tr></thead>
         <tbody>
           {% for f in failures %}
           <tr>
-            <td>{{ f.model }}</td><td>{{ f.task }}</td><td>{{ f.item }}</td>
+            <td class="mn {{ mclass[f.model] }}">{{ f.model }}</td><td>{{ f.task }}</td><td>{{ f.item }}</td>
             <td class="num">{{ '%.2f'|format(f.score) }}</td>
             <td class="wrap">{{ f.expected if f.expected is not none else '' }}</td>
             <td class="wrap">{{ f.got }}</td>
@@ -454,96 +464,167 @@
         </tbody>
       </table></div>
     </details>
-  </div>
+  </section>
   {% endif %}
+  {% else %}
+  <section class="panel">
+    <h2>Empty report</h2>
+    <p class="muted">Start the provider (e.g. <code>ollama serve</code>), confirm the model exists, then re-run.</p>
+  </section>
   {% endif %}
 
   <footer>
+<pre aria-hidden="true">      .  *  .        ✦        .   *   .
+  ═══════════════ END OF TRANSMISSION ═══════════════</pre>
     Host: {{ manifest.host.os }} · {{ manifest.host.cpu }} · {{ manifest.host.ram_gb }} GB RAM
     {% if manifest.host.gpu %} · GPU {{ manifest.host.gpu }}{% endif %}<br/>
     python {{ manifest.host.python }} · run {{ manifest.run_id }}
   </footer>
+</div>
 
-  {% if ok %}
-  <script>
-    const memT = {{ mem_t_json | safe }};
-    const memSystem = {{ mem_system_json | safe }};
-    const memProcess = {{ mem_process_json | safe }};
-    const memModel = {{ mem_model_json | safe }};
-    const memKv = {{ mem_kv_json | safe }};
-    const memContext = {{ mem_context_json | safe }};
+{% if ok %}
+<script>
+  const memT = {{ mem_t_json | safe }};
+  const memSystem = {{ mem_system_json | safe }};
+  const memProcess = {{ mem_process_json | safe }};
+  const memModel = {{ mem_model_json | safe }};
+  const memKv = {{ mem_kv_json | safe }};
+  const memContext = {{ mem_context_json | safe }};
+  const needle = {{ needle_json | safe }};
+  const scaling = {{ scaling_json | safe }};
 
-    const grid = { color: 'rgba(90,122,136,0.25)' };
-    const ticks = { color: '#5a7a88', font: { family: 'IBM Plex Mono' } };
-    Chart.defaults.color = '#d8f6ff';
-    Chart.defaults.borderColor = 'rgba(30,58,76,0.8)';
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const CREAM = css('--cream'), DIM = css('--dim'), GOLD = css('--gold'), CORAL = css('--coral'), MINT = css('--mint'), PERI = css('--peri');
+  const MODEL_COLORS = ['--m0','--m1','--m2','--m3','--m4','--m5'].map(css);
+  const MONO = '"IBM Plex Mono", "SF Mono", ui-monospace, Consolas, monospace';
+  const mc = i => MODEL_COLORS[i % MODEL_COLORS.length];
+  const GRID = 'rgba(246,231,200,0.13)';
+  Chart.defaults.color = CREAM;
+  Chart.defaults.borderColor = GRID;
+  Chart.defaults.font.family = MONO;
+  Chart.defaults.font.size = 11;
+  const ticks = { color: DIM };
+  const axis = (title, extra = {}) => ({ title: { display: !!title, text: title, color: DIM }, ticks, grid: { color: GRID }, ...extra });
+  const legend = { labels: { boxWidth: 12, boxHeight: 2, usePointStyle: false } };
 
-    {% if mode != 'profile' %}
-    const labels = {{ labels_json | safe }};
-    const tokS = {{ tok_s_json | safe }};
-    const prefill = {{ prefill_json | safe }};
-    const ttft = {{ ttft_json | safe }};
-    const overall = {{ overall_json | safe }};
-    const radarLabels = {{ radar_labels_json | safe }};
-    const radar = {{ radar_json | safe }};
-    const palette = ['#39f0ff', '#ffc857', '#ff2bd6', '#3dff9a', '#9b8cff', '#ff7a59'];
+  // ASCII bar chart: dim ░ track with a model-coloured █ fill clipped to a percentage.
+  function asciiBars(id, labels, values, fmt, max) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const top = max || Math.max(...values, 1e-9);
+    el.innerHTML = labels.map((l, i) => {
+      const pct = Math.max(0, Math.min(100, (values[i] / top) * 100));
+      return `<div class="arow" style="--c:${mc(i)}"><span class="lbl" title="${l}">${l}</span><span class="val">${fmt(values[i])}</span>` +
+        `<span class="atrack">${'░'.repeat(120)}<span class="afill" style="width:${pct}%">${'█'.repeat(120)}</span></span></div>`;
+    }).join('');
+  }
 
-    new Chart(document.getElementById('chartTok'), {
-      type: 'bar',
-      data: { labels, datasets: [{ label: 'decode tok/s', data: tokS, backgroundColor: '#39f0ffaa' }] },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
-    });
-    new Chart(document.getElementById('chartPrefill'), {
-      type: 'bar',
-      data: { labels, datasets: [{ label: 'prefill tok/s', data: prefill, backgroundColor: '#3dff9aaa' }] },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
-    });
-    new Chart(document.getElementById('chartTtft'), {
-      type: 'bar',
-      data: { labels, datasets: [{ label: 'TTFT ms', data: ttft, backgroundColor: '#ff2bd6aa' }] },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { ticks, grid } } }
-    });
-    new Chart(document.getElementById('chartQual'), {
-      type: 'radar',
-      data: {
-        labels: radarLabels,
-        datasets: radar.map((m, i) => ({
-          label: m.label,
-          data: m.data,
-          borderColor: palette[i % palette.length],
-          backgroundColor: palette[i % palette.length] + '26'
-        }))
-      },
-      options: { scales: { r: { min: 0, max: 1, ticks: { display: false }, grid: { color: 'rgba(90,122,136,0.3)' }, angleLines: { color: 'rgba(90,122,136,0.3)' }, pointLabels: { color: '#ffc857' } } } }
-    });
-    new Chart(document.getElementById('chartOverall'), {
-      type: 'bar',
-      data: { labels, datasets: [{ label: 'overall', data: overall, backgroundColor: '#ffc857aa' }] },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks, grid }, y: { min: 0, max: 1, ticks, grid } } }
-    });
-    {% endif %}
+  {% if mode != 'profile' %}
+  const labels = {{ labels_json | safe }};
+  const star = {{ star_json | safe }};
+  const mix = {{ composition_json | safe }};
+  asciiBars('barTok', labels, {{ tok_s_json | safe }}, v => v.toFixed(1));
+  asciiBars('barPrefill', labels, {{ prefill_json | safe }}, v => v.toFixed(0));
+  asciiBars('barTtft', labels, {{ ttft_json | safe }}, v => v.toFixed(0) + ' ms');
+  asciiBars('barOverall', labels, {{ overall_json | safe }}, v => v.toFixed(3), 1);
 
-    new Chart(document.getElementById('chartMem'), {
-      type: 'line',
-      data: {
-        labels: memT,
-        datasets: [
-          { label: 'System RAM', data: memSystem, borderColor: '#39f0ff', tension: 0.2, pointRadius: 0 },
-          { label: 'Process RSS', data: memProcess, borderColor: '#ffc857', tension: 0.2, pointRadius: 0 },
-          { label: 'Model RAM', data: memModel, borderColor: '#ff2bd6', tension: 0.2, pointRadius: 0 },
-          { label: 'KV-cache', data: memKv, borderColor: '#3dff9a', tension: 0.2, pointRadius: 0 },
-          { label: 'Context', data: memContext, borderColor: '#d8f6ff', borderDash: [4, 4], tension: 0.2, pointRadius: 0 }
-        ]
-      },
-      options: {
-        plugins: { legend: { labels: { boxWidth: 12 } } },
-        scales: {
-          x: { title: { display: true, text: 'seconds', color: '#5a7a88' }, ticks, grid },
-          y: { title: { display: true, text: 'MB', color: '#5a7a88' }, ticks, grid }
-        }
-      }
-    });
-  </script>
+  // Star map: speed vs quality, with quadrant captions and name tags drawn on the canvas.
+  const starPlugin = {
+    id: 'starLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: a } = chart;
+      ctx.save();
+      ctx.font = `10px ${MONO}`;
+      ctx.fillStyle = 'rgba(246,231,200,.28)';
+      ctx.textAlign = 'right'; ctx.fillText('FAST + SMART ✦', a.right - 8, a.top + 16);
+      ctx.textAlign = 'left';  ctx.fillText('SLOW + SMART', a.left + 8, a.top + 16);
+      ctx.fillText('SLOW + WEAK', a.left + 8, a.bottom - 8);
+      ctx.textAlign = 'right'; ctx.fillText('FAST + WEAK', a.right - 8, a.bottom - 8);
+      ctx.font = `11px ${MONO}`; ctx.textAlign = 'left';
+      chart.data.datasets.forEach((d, i) => {
+        const m = chart.getDatasetMeta(i).data[0];
+        if (!m) return;
+        ctx.fillStyle = d.borderColor;
+        const right = m.x > a.right - 130;
+        ctx.textAlign = right ? 'right' : 'left';
+        ctx.fillText(d.label, m.x + (right ? -14 : 14), m.y + 4 + (i % 2 ? 14 : -4));
+      });
+      ctx.restore();
+    }
+  };
+  const xs = star.map(p => p.x);
+  const xMax = Math.max(...xs, 1) * 1.15;
+  new Chart(document.getElementById('chartStar'), {
+    type: 'scatter',
+    plugins: [starPlugin],
+    data: { datasets: star.map((p, i) => ({
+      label: p.label, data: [{ x: p.x, y: p.y }],
+      backgroundColor: mc(i), borderColor: mc(i), pointStyle: 'rectRot', pointRadius: 9, pointHoverRadius: 11
+    })) },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.x.toFixed(1)} tok/s · quality ${c.parsed.y.toFixed(2)}` } } },
+      scales: { x: axis('decode tok/s  →', { min: 0, max: xMax }), y: axis('quality (capability, 0–1)  →', { min: 0, max: 1.05 }) }
+    }
+  });
+
+  const radarLabels = {{ radar_labels_json | safe }};
+  const radar = {{ radar_json | safe }};
+  new Chart(document.getElementById('chartQual'), {
+    type: 'radar',
+    data: { labels: radarLabels, datasets: radar.map((m, i) => ({
+      label: m.label, data: m.data, borderColor: mc(i), backgroundColor: mc(i) + '22', borderWidth: 2, pointRadius: 2, pointBackgroundColor: mc(i)
+    })) },
+    options: { maintainAspectRatio: false, plugins: { legend },
+      scales: { r: { min: 0, max: 1, ticks: { display: false }, grid: { color: GRID }, angleLines: { color: GRID }, pointLabels: { color: CREAM, font: { family: MONO, size: 11 } } } } }
+  });
+
+  // Score mix: performance / capability / reliability side by side per model.
+  const mixSeries = [['performance', GOLD], ['capability', MINT], ['reliability', PERI]];
+  new Chart(document.getElementById('chartMix'), {
+    type: 'bar',
+    data: { labels: mix.map(m => m.label), datasets: mixSeries.map(([k, c]) => ({ label: k, data: mix.map(m => m[k]), backgroundColor: c, borderWidth: 0 })) },
+    options: { maintainAspectRatio: false, plugins: { legend },
+      scales: { x: { ticks, grid: { display: false } }, y: axis('', { min: 0, max: 1 }) } }
+  });
   {% endif %}
+
+  // Long-context recall + concurrency scaling (only when those tasks ran).
+  const hasNeedle = needle.length > 0, hasScale = scaling.length > 0;
+  if (hasNeedle || hasScale) {
+    document.getElementById('secLong').hidden = false;
+    const names = {{ labels_json | safe if mode != 'profile' else '[]' }};
+    const idx = l => Math.max(0, names.indexOf(l));
+    if (hasNeedle) new Chart(document.getElementById('chartNeedle'), {
+      type: 'line',
+      data: { labels: ['10% deep', '50% deep', '90% deep'], datasets: needle.map(n => ({
+        label: n.label, data: n.data, borderColor: mc(idx(n.label)), backgroundColor: mc(idx(n.label)), tension: .2, pointRadius: 4 })) },
+      options: { maintainAspectRatio: false, plugins: { legend }, scales: { x: { ticks, grid: { color: GRID } }, y: axis('recall', { min: 0, max: 1.05 }) } }
+    }); else document.getElementById('boxNeedle').hidden = true;
+    if (hasScale) new Chart(document.getElementById('chartScale'), {
+      type: 'line',
+      data: { labels: ['×1', '×2', '×4'], datasets: scaling.map(n => ({
+        label: n.label, data: n.data, borderColor: mc(idx(n.label)), backgroundColor: mc(idx(n.label)), tension: .2, pointRadius: 4 })) },
+      options: { maintainAspectRatio: false, plugins: { legend }, scales: { x: { ticks, grid: { color: GRID } }, y: axis('aggregate tok/s', { min: 0 }) } }
+    }); else document.getElementById('boxScale').hidden = true;
+  }
+
+  new Chart(document.getElementById('chartMem'), {
+    type: 'line',
+    data: {
+      labels: memT,
+      datasets: [
+        { label: 'System RAM', data: memSystem, borderColor: CORAL, tension: 0.2, pointRadius: 0 },
+        { label: 'Process RSS', data: memProcess, borderColor: GOLD, tension: 0.2, pointRadius: 0 },
+        { label: 'Model RAM', data: memModel, borderColor: PERI, tension: 0.2, pointRadius: 0 },
+        { label: 'KV-cache', data: memKv, borderColor: MINT, tension: 0.2, pointRadius: 0 },
+        { label: 'Context', data: memContext, borderColor: CREAM, borderDash: [4, 4], tension: 0.2, pointRadius: 0 }
+      ]
+    },
+    options: { maintainAspectRatio: false, plugins: { legend },
+      scales: { x: axis('seconds', { ticks: { color: DIM, maxTicksLimit: 10, maxRotation: 0 } }), y: axis('MB') } }
+  });
+</script>
+{% endif %}
 </body>
 </html>

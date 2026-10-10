@@ -1,4 +1,4 @@
-"""Keygen-style banner, dialog frames and the boot sequence."""
+"""Mars-colony banner, dialog frames and the boot sequence."""
 
 from __future__ import annotations
 
@@ -10,10 +10,11 @@ from rich import box
 from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from llm_bench import __version__
-from llm_bench.ui.theme import CREAM, TAN_MID, YELLOW, console
+from llm_bench.ui.theme import CORAL, CREAM, SOFT, TAN_MID, YELLOW, console
 
 BANNER = r"""
 ██╗     ██╗     ███╗   ███╗      ██████╗ ███████╗███╗   ██╗ ██████╗██╗  ██╗
@@ -24,10 +25,30 @@ BANNER = r"""
 ╚══════╝╚══════╝╚═╝     ╚═╝      ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝
 """.strip("\n")
 
-# top -> bottom fade of the lit faces; the extruded shadow stays dark
-_FACE = ["#fff6d2", "#f7e9bd", "#efdcab", "#e4cd9b", "#d8be8c", "#c9ae7e"]
+# top -> bottom sunset fade (gold -> coral -> rose); the extruded shadow stays violet
+_FACE = ["#ffd878", "#ffc857", "#ffa857", "#ff7a59", "#ff6f7a", "#ff8fb8"]
 _SHADOW = TAN_MID
-GREETS = "greetz to  ollama · llama.cpp · mlx · every GPU that ever got hot"
+GREETS = "transmitting from  ollama · llama.cpp · mlx · every GPU that ever got hot"
+
+ROCKET = r"""
+    /\
+   /  \
+  / () \
+ |  __  |
+ | |__| |
+/|      |\
+/_|_/\_|_\
+   /||\
+  ' || '
+""".strip("\n")
+PLANET = r"""
+   _.-~~~-._
+ .'  o   .  '.
+/ ~~~~~~~~~~~ \
+\  .    o    ./
+ '._       _.'
+    '-...-'
+""".strip("\n")
 
 
 def render_logo() -> Text:
@@ -42,9 +63,9 @@ def render_logo() -> Text:
 
 
 def raster_bar(width: int = 76) -> Text:
-    """Copper-bar style horizontal gradient (brown -> yellow -> cream -> yellow -> brown)."""
-    stops = [(0x7D, 0x60, 0x46), (0xFF, 0xE9, 0x33), (0xF1, 0xE2, 0xBB), (0xFF, 0xE9, 0x33),
-             (0x7D, 0x60, 0x46)]
+    """Horizon bar: violet -> coral -> gold -> coral -> violet."""
+    stops = [(0x7A, 0x5A, 0xA0), (0xFF, 0x7A, 0x59), (0xFF, 0xC8, 0x57), (0xFF, 0x7A, 0x59),
+             (0x7A, 0x5A, 0xA0)]
     bar = Text(no_wrap=True)
     for x in range(width):
         pos = x / max(1, width - 1) * (len(stops) - 1)
@@ -58,20 +79,28 @@ def raster_bar(width: int = 76) -> Text:
 def render_banner() -> Panel:
     subtitle = Text.assemble(
         (f"v{__version__}", f"bold {YELLOW}"),
-        ("  ::  local LLM benchmark  ::  speed · reasoning · code · honesty", CREAM),
+        ("  ◦  local LLM benchmark  ◦  speed · reasoning · code · honesty", CREAM),
     )
+    logo = render_logo()
+    if console.width >= 118:
+        art = Table.grid(padding=(0, 3))
+        art.add_column(justify="center")
+        art.add_column(justify="center")
+        art.add_column(justify="center")
+        art.add_row(Text(ROCKET, style=YELLOW), logo, Text(PLANET, style=CORAL))
+        logo = art
     body = Group(
-        Align.center(render_logo()),
+        Align.center(logo),
         Align.center(raster_bar(74)),
         Align.center(subtitle),
-        Align.center(Text(GREETS, style=TAN_MID)),
+        Align.center(Text(GREETS, style=SOFT)),
     )
     return Panel(
         body,
         box=box.DOUBLE,
         border_style="keygen.border",
-        title=f"[bold {CREAM}] LLM-BENCH KEYGEN [/]",
-        subtitle=f"[{TAN_MID}] tracker edition [/]",
+        title=f"[bold {CORAL}]╣[/][bold {YELLOW}] MISSION CONTROL [/][bold {CORAL}]╠[/]",
+        subtitle=f"[{SOFT}] ✦ mars colony edition ✦ [/]",
         padding=(1, 2),
     )
 
@@ -79,7 +108,8 @@ def render_banner() -> Panel:
 def dialog(title: str, body: RenderableType) -> Panel:
     """A cream dialog window, like the settings boxes in old setup programs."""
     return Panel(body, box=box.DOUBLE, border_style="keygen.border",
-                 title=f"[bold {CREAM}] {title} [/]", padding=(0, 2))
+                 title=f"[bold {CORAL}]╣[/][bold {YELLOW}] {title} [/][bold {CORAL}]╠[/]",
+                 padding=(0, 2))
 
 
 def serial_for(*parts: str) -> str:
@@ -90,7 +120,7 @@ def serial_for(*parts: str) -> str:
 def _reveal_serial(serial: str) -> None:
     """Keygen-style serial that scrambles, then locks in left to right."""
     if not console.is_terminal:
-        console.print(f"  [keygen.label]Serial[/] : [keygen.title]{serial}[/]")
+        console.print(f"  [keygen.label]Mission ID[/] : [keygen.title]{serial}[/]")
         return
     rng = random.Random(serial)
     chars = "0123456789ABCDEF"
@@ -103,7 +133,7 @@ def _reveal_serial(serial: str) -> None:
             )
             live.update(
                 Text.assemble(
-                    ("  Serial", "keygen.label"), (" : ", ""), (shown, f"bold {YELLOW}")
+                    ("  Mission ID", "keygen.label"), (" : ", ""), (shown, f"bold {YELLOW}")
                 )
             )
             time.sleep(0.02)
@@ -118,12 +148,12 @@ def boot_sequence(
 ) -> None:
     console.print(render_banner())
     name = ", ".join(models)
-    console.print(f"  [keygen.label]Name  [/] : [keygen.accent]{name[:60]}[/]")
+    console.print(f"  [keygen.label]Crew      [/] : [keygen.accent]{name[:60]}[/]")
     _reveal_serial(serial_for(provider, *models, *tasks))
     console.print(
-        f"  [{TAN_MID}]\\[[/][keygen.accent] Generate [/][{TAN_MID}]][/]  "
+        f"  [{TAN_MID}]\\[[/][keygen.accent] Launch [/][{TAN_MID}]][/]  "
         f"[{TAN_MID}]\\[[/][keygen.label] About [/][{TAN_MID}]][/]  "
-        f"[{TAN_MID}]\\[[/][keygen.label] Exit [/][{TAN_MID}]][/]"
+        f"[{TAN_MID}]\\[[/][keygen.label] Abort [/][{TAN_MID}]][/]"
     )
     console.print()
     steps = [
@@ -137,4 +167,4 @@ def boot_sequence(
         console.print(f"  [keygen.label]{label:<9}[/] [keygen.ok]{value}[/]")
         if console.is_terminal:
             time.sleep(0.05)
-    console.print("\n  [keygen.title]Press Generate...[/] [keygen.dim](running benchmarks)[/]\n")
+    console.print("\n  [keygen.title]Ignition sequence start...[/] [keygen.dim](running benchmarks)[/]\n")

@@ -1,7 +1,7 @@
-"""Live run screen in the style of a classic tracker (Schism/FastTracker info page).
+"""Live run screen: a mission-control take on a classic tracker info page.
 
-Tan desktop, black panels with beveled frames, yellow channel VU bars, a scrolling
-green pattern view, a red oscilloscope. Everything on screen is driven either by the
+Dusk-violet desktop, deep-space panels with beveled frames, gold channel VU bars, a
+scrolling mint pattern view, a rose oscilloscope. Everything on screen is driven either by the
 song that is playing (spectrum bands) or by the benchmark's real progress.
 """
 
@@ -28,6 +28,7 @@ from llm_bench.ui.theme import (
     HILITE,
     RED,
     SCOPE_RED,
+    SOFT,
     TAN,
     TAN_DARK,
     TAN_MID,
@@ -475,7 +476,7 @@ class BenchLiveDisplay:
         # result log: newest at the bottom
         lines = list(st.log)[-inner:]
         for i, line in enumerate(lines):
-            colour = {"ok": GREEN, "fail": RED}.get(line.kind, "#d9bc96")
+            colour = {"ok": GREEN, "fail": RED}.get(line.kind, CREAM)
             cv.put(x_mid + 1, y + 1 + inner - len(lines) + i,
                    _fit(line.text, wm - 2), f"{colour} on {BLACK}")
 
@@ -483,7 +484,7 @@ class BenchLiveDisplay:
         dots = list(st.dots)[-inner:]
         for i, (value, kind) in enumerate(dots):
             dx = int(value * (wr - 3))
-            colour = {"fail": RED}.get(kind, "#c9a98a")
+            colour = {"fail": RED}.get(kind, SOFT)
             cv.put(x_right + 1 + dx, y + 1 + inner - len(dots) + i, "██", f"{colour} on {BLACK}")
 
     # progress rows ------------------------------------------------------------------------
@@ -536,12 +537,12 @@ class BenchLiveDisplay:
                 x = x0 + 1 + c * cw
                 note = vis.note(row, c)
                 if note is None:
-                    cv.put(x, row_y, "··· ·· ···", f"#2f6f2f on {bg}")
+                    cv.put(x, row_y, "··· ·· ···", f"#2d6b5a on {bg}")
                 else:
                     name, ins, vol = note
                     cv.put(x, row_y, name, f"bold {GREEN} on {bg}")
-                    cv.put(x + 4, row_y, f"{ins:02d}", f"#d9bc96 on {bg}")
-                    cv.put(x + 7, row_y, f"v{vol:02d}", f"#8cd98c on {bg}")
+                    cv.put(x + 4, row_y, f"{ins:02d}", f"{CREAM} on {bg}")
+                    cv.put(x + 7, row_y, f"v{vol:02d}", f"#b5f0dd on {bg}")
 
     # compact fallback ---------------------------------------------------------------------
 

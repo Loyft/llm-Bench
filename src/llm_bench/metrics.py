@@ -115,21 +115,22 @@ def aggregate_samples(samples: list[SampleResult]) -> list[TaskSummary]:
 
 
 def _norm_higher_better(value: float | None, peers: list[float]) -> float:
+    """Value as a fraction of the best peer (1.0 = best). Ratio, not min-max, so a small
+    gap between two models stays small instead of stretching to 1.0 vs 0.0."""
     if value is None or not peers:
         return 0.0
-    lo, hi = min(peers), max(peers)
-    if hi <= lo:
-        return 1.0
-    return (value - lo) / (hi - lo)
+    hi = max(peers)
+    return 1.0 if hi <= 0 else max(0.0, min(1.0, value / hi))
 
 
 def _norm_lower_better(value: float | None, peers: list[float]) -> float:
+    """Best (lowest) peer as a fraction of the value (1.0 = best)."""
     if value is None or not peers:
         return 0.0
-    lo, hi = min(peers), max(peers)
-    if hi <= lo:
-        return 1.0
-    return (hi - value) / (hi - lo)
+    lo = min(peers)
+    if value <= 0 or lo <= 0:
+        return 1.0 if value <= lo else 0.0
+    return max(0.0, min(1.0, lo / value))
 
 
 def _num(block: TaskSummary | None, key: str) -> float | None:
